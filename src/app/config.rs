@@ -11,6 +11,23 @@ use windows::Win32::System::Registry::{
 const RUN_KEY_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const APP_REG_NAME: &str = "VeroStat";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrayDisplayMode {
+    CpuUsage,
+    CpuTemperature,
+    GpuUsage,
+    GpuTemperature,
+    RamUsage,
+    DefaultLogo,
+}
+
+impl Default for TrayDisplayMode {
+    fn default() -> Self {
+        Self::CpuUsage
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     /// Refresh interval in milliseconds (default 1000)
@@ -21,6 +38,8 @@ pub struct AppConfig {
     pub high_temp_threshold: f32,
     /// Show disk statistics in dashboard
     pub show_disk_stats: bool,
+    /// Which metric to display on the dynamic taskbar tray icon
+    pub tray_display_mode: TrayDisplayMode,
 }
 
 impl Default for AppConfig {
@@ -30,6 +49,7 @@ impl Default for AppConfig {
             start_with_windows: false,
             high_temp_threshold: 85.0,
             show_disk_stats: true,
+            tray_display_mode: TrayDisplayMode::default(),
         }
     }
 }

@@ -36,14 +36,15 @@ Prioritizes: **Low resource usage > reliability > simplicity > clean aesthetics*
   - Right-click menu:
     - **Open Dashboard**
     - **Refresh**
+    - **▶ Start Benchmark Log** / **⏹ Stop Benchmark Log (REC)**
+    - **Tray Icon Display ▸** (Select what appears on the taskbar icon: CPU %, CPU Temp, GPU %, GPU Temp, RAM %, or Default Logo)
     - **Settings...**
     - **Start with Windows** (toggle registry autostart)
     - **About**
     - **Exit**
-  - **Dynamic Taskbar Icon**: Renders live CPU percentage digits directly on the system tray icon with color-coded load levels (sky blue, amber, crimson).
+  - **Customizable Dynamic Taskbar Icon**: Choose between real-time CPU %, CPU Temp (°C), GPU %, GPU Temp (°C), RAM %, or Default Logo directly from the tray menu with persistent configuration.
   - Dynamic tray icon tooltip showing live CPU temp, GPU temp, RAM %, and network speed on hover.
   - **Benchmark Session Logger**: Click *Start Benchmark Log* in the tray menu to record hardware metrics every second to a CSV file; stopping displays a full summary with peak temperatures and averages.
-- ⚡ **Top 3 Resource Hogs**:
   - Displays the 3 most CPU-heavy active processes directly on the dashboard with their CPU % and RAM usage.
 - 🎨 **Minimal Dark Dashboard**:
   - Ultra-compact, clean layout (280 × 470 px) with native Win32 GDI double-buffered rendering

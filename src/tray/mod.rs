@@ -7,29 +7,35 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use muda::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use muda::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use parking_lot::RwLock;
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use windows::core::PCWSTR;
 use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
 
-use crate::app::config::{is_autostart_enabled, set_autostart, AppConfig};
+use crate::app::config::{is_autostart_enabled, set_autostart, AppConfig, TrayDisplayMode};
 use crate::app::{BenchmarkSession, SystemMetrics};
 use crate::monitor::network::format_speed;
 use crate::ui::DashboardWindow;
-use icon_gen::generate_stat_icon;
+use icon_gen::{generate_logo_icon, generate_stat_icon};
 
 pub struct TrayManager {
     _tray: TrayIcon,
     open_id: MenuId,
     refresh_id: MenuId,
     benchmark_item: MenuItem,
+    display_cpu_usage: CheckMenuItem,
+    display_cpu_temp: CheckMenuItem,
+    display_gpu_usage: CheckMenuItem,
+    display_gpu_temp: CheckMenuItem,
+    display_ram_usage: CheckMenuItem,
+    display_default_logo: CheckMenuItem,
     settings_id: MenuId,
     autostart_item: CheckMenuItem,
     about_id: MenuId,
     exit_id: MenuId,
     last_tooltip: String,
-    last_icon_val: Option<u32>,
+    last_icon_key: (TrayDisplayMode, u32),
 }
 
 impl TrayManager {
@@ -40,6 +46,56 @@ impl TrayManager {
         let open_item = MenuItem::new("Open Dashboard", true, None);
         let refresh_item = MenuItem::new("Refresh", true, None);
         let benchmark_item = MenuItem::new("▶ Start Benchmark Log", true, None);
+
+        // Submenu: Tray Icon Display mode selection
+        let current_mode = config.read().tray_display_mode;
+        let display_submenu = Submenu::new("Tray Icon Display", true);
+
+        let display_cpu_usage = CheckMenuItem::new(
+            "CPU Usage (%)",
+            true,
+            current_mode == TrayDisplayMode::CpuUsage,
+            None,
+        );
+        let display_cpu_temp = CheckMenuItem::new(
+            "CPU Temperature (°C)",
+            true,
+            current_mode == TrayDisplayMode::CpuTemperature,
+            None,
+        );
+        let display_gpu_usage = CheckMenuItem::new(
+            "GPU Usage (%)",
+            true,
+            current_mode == TrayDisplayMode::GpuUsage,
+            None,
+        );
+        let display_gpu_temp = CheckMenuItem::new(
+            "GPU Temperature (°C)",
+            true,
+            current_mode == TrayDisplayMode::GpuTemperature,
+            None,
+        );
+        let display_ram_usage = CheckMenuItem::new(
+            "RAM Usage (%)",
+            true,
+            current_mode == TrayDisplayMode::RamUsage,
+            None,
+        );
+        let display_default_logo = CheckMenuItem::new(
+            "Default Logo",
+            true,
+            current_mode == TrayDisplayMode::DefaultLogo,
+            None,
+        );
+
+        display_submenu.append(&display_cpu_usage).map_err(|e| e.to_string())?;
+        display_submenu.append(&display_cpu_temp).map_err(|e| e.to_string())?;
+        display_submenu.append(&display_gpu_usage).map_err(|e| e.to_string())?;
+        display_submenu.append(&display_gpu_temp).map_err(|e| e.to_string())?;
+        display_submenu.append(&display_ram_usage).map_err(|e| e.to_string())?;
+        display_submenu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
+        display_submenu.append(&display_default_logo).map_err(|e| e.to_string())?;
+
         let settings_item = MenuItem::new("Settings...", true, None);
 
         let initial_autostart = is_autostart_enabled();
@@ -59,6 +115,7 @@ impl TrayManager {
         menu.append(&open_item).map_err(|e| e.to_string())?;
         menu.append(&refresh_item).map_err(|e| e.to_string())?;
         menu.append(&benchmark_item).map_err(|e| e.to_string())?;
+        menu.append(&display_submenu).map_err(|e| e.to_string())?;
         menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
         menu.append(&settings_item).map_err(|e| e.to_string())?;
         menu.append(&autostart_item).map_err(|e| e.to_string())?;
@@ -66,7 +123,7 @@ impl TrayManager {
         menu.append(&about_item).map_err(|e| e.to_string())?;
         menu.append(&exit_item).map_err(|e| e.to_string())?;
 
-        let icon = load_or_create_icon()?;
+        let icon = load_or_create_icon(current_mode)?;
 
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
@@ -82,12 +139,18 @@ impl TrayManager {
             open_id,
             refresh_id,
             benchmark_item,
+            display_cpu_usage,
+            display_cpu_temp,
+            display_gpu_usage,
+            display_gpu_temp,
+            display_ram_usage,
+            display_default_logo,
             settings_id,
             autostart_item,
             about_id,
             exit_id,
             last_tooltip: String::new(),
-            last_icon_val: None,
+            last_icon_key: (current_mode, 999),
         })
     }
 
@@ -119,6 +182,18 @@ impl TrayManager {
                 dashboard.show();
             } else if event.id == self.benchmark_item.id() {
                 toggle_benchmark_session(&self.benchmark_item, &benchmark_session);
+            } else if event.id == self.display_cpu_usage.id() {
+                self.set_display_mode(TrayDisplayMode::CpuUsage, &config);
+            } else if event.id == self.display_cpu_temp.id() {
+                self.set_display_mode(TrayDisplayMode::CpuTemperature, &config);
+            } else if event.id == self.display_gpu_usage.id() {
+                self.set_display_mode(TrayDisplayMode::GpuUsage, &config);
+            } else if event.id == self.display_gpu_temp.id() {
+                self.set_display_mode(TrayDisplayMode::GpuTemperature, &config);
+            } else if event.id == self.display_ram_usage.id() {
+                self.set_display_mode(TrayDisplayMode::RamUsage, &config);
+            } else if event.id == self.display_default_logo.id() {
+                self.set_display_mode(TrayDisplayMode::DefaultLogo, &config);
             } else if event.id == self.settings_id {
                 show_settings_dialog(&config);
             } else if event.id == self.autostart_item.id() {
@@ -169,16 +244,50 @@ impl TrayManager {
             self.last_tooltip = new_tooltip;
         }
 
-        // 2. Update Dynamic Tray Icon with real-time CPU %
-        let cpu_val = m.cpu_usage.map(|u| u.round() as u32).unwrap_or(0);
-        if self.last_icon_val != Some(cpu_val) {
-            if let Ok(dyn_icon) = generate_stat_icon(cpu_val) {
+        // 2. Update Dynamic Tray Icon based on user selected mode
+        let current_mode = config.read().tray_display_mode;
+        let (val, is_temp) = match current_mode {
+            TrayDisplayMode::CpuUsage => (m.cpu_usage.map(|u| u.round() as u32).unwrap_or(0), false),
+            TrayDisplayMode::CpuTemperature => (m.cpu_temperature.map(|t| t.round() as u32).unwrap_or(0), true),
+            TrayDisplayMode::GpuUsage => (m.gpu_usage.map(|u| u.round() as u32).unwrap_or(0), false),
+            TrayDisplayMode::GpuTemperature => (m.gpu_temperature.map(|t| t.round() as u32).unwrap_or(0), true),
+            TrayDisplayMode::RamUsage => (m.ram_usage.round() as u32, false),
+            TrayDisplayMode::DefaultLogo => (0, false),
+        };
+
+        let current_key = (current_mode, val);
+        if self.last_icon_key != current_key {
+            let icon_res = if current_mode == TrayDisplayMode::DefaultLogo {
+                load_default_logo_icon()
+            } else {
+                generate_stat_icon(val, is_temp)
+            };
+
+            if let Ok(dyn_icon) = icon_res {
                 let _ = self._tray.set_icon(Some(dyn_icon));
-                self.last_icon_val = Some(cpu_val);
+                self.last_icon_key = current_key;
             }
         }
 
         true
+    }
+
+    fn set_display_mode(&mut self, mode: TrayDisplayMode, config: &Arc<RwLock<AppConfig>>) {
+        self.display_cpu_usage.set_checked(mode == TrayDisplayMode::CpuUsage);
+        self.display_cpu_temp.set_checked(mode == TrayDisplayMode::CpuTemperature);
+        self.display_gpu_usage.set_checked(mode == TrayDisplayMode::GpuUsage);
+        self.display_gpu_temp.set_checked(mode == TrayDisplayMode::GpuTemperature);
+        self.display_ram_usage.set_checked(mode == TrayDisplayMode::RamUsage);
+        self.display_default_logo.set_checked(mode == TrayDisplayMode::DefaultLogo);
+
+        {
+            let mut cfg = config.write();
+            cfg.tray_display_mode = mode;
+            let _ = cfg.save();
+        }
+
+        // Force icon refresh on next tick
+        self.last_icon_key = (mode, 9999);
     }
 }
 
@@ -189,7 +298,6 @@ fn toggle_benchmark_session(
     let mut guard = session_lock.write();
 
     if let Some(mut session) = guard.take() {
-        // Stop session
         let _ = session.file.flush();
         drop(session.file);
 
@@ -229,7 +337,6 @@ fn toggle_benchmark_session(
 
         show_message_box("VeroStat - Benchmark Finished", &summary);
     } else {
-        // Start session
         let path = get_log_file_path();
         if let Ok(mut file) = File::create(&path) {
             let _ = writeln!(
@@ -281,16 +388,22 @@ fn get_log_file_path() -> PathBuf {
     path
 }
 
-fn load_or_create_icon() -> Result<Icon, String> {
+fn load_or_create_icon(mode: TrayDisplayMode) -> Result<Icon, String> {
+    if mode == TrayDisplayMode::DefaultLogo {
+        load_default_logo_icon()
+    } else {
+        generate_stat_icon(0, mode == TrayDisplayMode::CpuTemperature || mode == TrayDisplayMode::GpuTemperature)
+    }
+}
+
+fn load_default_logo_icon() -> Result<Icon, String> {
     let icon_path = Path::new("assets/icon.ico");
     if icon_path.exists() {
         if let Ok(icon) = Icon::from_path(icon_path, Some((32, 32))) {
             return Ok(icon);
         }
     }
-
-    // Default fallback icon
-    generate_stat_icon(0)
+    generate_logo_icon()
 }
 
 fn show_about_dialog() {
@@ -299,7 +412,7 @@ fn show_about_dialog() {
         A lightweight native Windows system-tray utility.\n\n\
         Features:\n\
         • Real-time CPU, GPU, RAM, & Network stats\n\
-        • Dynamic taskbar icon showing live CPU usage\n\
+        • Customizable taskbar icon (CPU %, Temp, GPU %, RAM, or Logo)\n\
         • Top 3 Resource Hogs process viewer\n\
         • Benchmark session CSV logging & peak reporting\n\
         • Native Win32 dark dashboard\n\
@@ -321,15 +434,26 @@ fn show_about_dialog() {
 fn show_settings_dialog(config: &Arc<RwLock<AppConfig>>) {
     let cfg = config.read();
     let title: Vec<u16> = "VeroStat - Settings\0".encode_utf16().collect();
+    let mode_str = match cfg.tray_display_mode {
+        TrayDisplayMode::CpuUsage => "CPU Usage (%)",
+        TrayDisplayMode::CpuTemperature => "CPU Temperature (°C)",
+        TrayDisplayMode::GpuUsage => "GPU Usage (%)",
+        TrayDisplayMode::GpuTemperature => "GPU Temperature (°C)",
+        TrayDisplayMode::RamUsage => "RAM Usage (%)",
+        TrayDisplayMode::DefaultLogo => "Default Logo",
+    };
+
     let msg = format!(
         "VeroStat Settings\n\n\
+        • Tray Icon Display: {}\n\
         • Refresh Interval: {} ms\n\
         • Start with Windows: {}\n\
         • High Temp Warning: {:.0}°C\n\
         • Show Storage Stats: {}\n\n\
         Configuration file is stored at:\n\
         {}\n\n\
-        (Edit config.toml directly to change refresh rates)\0",
+        (You can switch Tray Icon Display directly from the tray menu!)\0",
+        mode_str,
         cfg.refresh_interval_ms,
         if cfg.start_with_windows { "Enabled" } else { "Disabled" },
         cfg.high_temp_threshold,

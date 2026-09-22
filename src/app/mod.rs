@@ -1,5 +1,6 @@
 pub mod config;
 pub mod state;
 
-pub use config::AppConfig;
+#[allow(unused_imports)]
+pub use config::{AppConfig, TrayDisplayMode};
 pub use state::{AppState, BenchmarkSession, ProcessInfo, SystemMetrics};
