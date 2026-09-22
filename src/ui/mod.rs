@@ -15,11 +15,12 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, GetClientRect, IsWindowVisible,
-    PostQuitMessage, RegisterClassExW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, SystemParametersInfoW, BringWindowToTop, GWLP_USERDATA, HCURSOR, HWND_TOPMOST,
+    PostQuitMessage, RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, SystemParametersInfoW, BringWindowToTop, GWLP_USERDATA, HCURSOR, HICON, HWND_TOPMOST,
     SPI_GETWORKAREA, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_PAINT,
+    WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_PAINT, WM_SETICON, ICON_BIG, ICON_SMALL,
     WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_EX_TOPMOST,
+    CreateIconFromResourceEx, IMAGE_FLAGS,
 };
 
 use crate::app::SystemMetrics;
@@ -91,8 +92,13 @@ impl DashboardWindow {
             wc.lpszClassName = WINDOW_CLASS_NAME;
             wc.hCursor = HCURSOR::default();
 
-            let _ = RegisterClassExW(&wc);
+            let app_icon = get_embedded_app_icon();
+            if let Some(icon) = app_icon {
+                wc.hIcon = icon;
+                wc.hIconSm = icon;
+            }
 
+            let _ = RegisterClassExW(&wc);
             let hwnd = CreateWindowExW(
                 WS_EX_TOPMOST,
                 WINDOW_CLASS_NAME,
@@ -109,6 +115,10 @@ impl DashboardWindow {
             )
             .map_err(|e| format!("Failed to create window: {:?}", e))?;
 
+            if let Some(icon) = app_icon {
+                let _ = SendMessageW(hwnd, WM_SETICON, WPARAM(ICON_BIG as usize), LPARAM(icon.0 as isize));
+                let _ = SendMessageW(hwnd, WM_SETICON, WPARAM(ICON_SMALL as usize), LPARAM(icon.0 as isize));
+            }
             // Enable Windows 10/11 Dark Titlebar
             let dark_mode: i32 = 1;
             let _ = DwmSetWindowAttribute(
@@ -178,6 +188,27 @@ fn create_font(height: i32, weight: i32) -> HFONT {
     let copy_len = font_name.len().min(lf.lfFaceName.len());
     lf.lfFaceName[..copy_len].copy_from_slice(&font_name[..copy_len]);
     unsafe { CreateFontIndirectW(&lf) }
+}
+
+const EMBEDDED_ICON: &[u8] = include_bytes!("../../assets/icon.ico");
+
+fn get_embedded_app_icon() -> Option<HICON> {
+    unsafe {
+        if EMBEDDED_ICON.len() > 22 {
+            let res = CreateIconFromResourceEx(
+                &EMBEDDED_ICON[22..],
+                windows::Win32::Foundation::BOOL(1),
+                0x00030000,
+                32,
+                32,
+                IMAGE_FLAGS(0),
+            );
+            if let Ok(hicon) = res {
+                return Some(hicon);
+            }
+        }
+        None
+    }
 }
 
 fn position_near_tray(hwnd: HWND) {
