@@ -1,6 +1,9 @@
 use std::ffi::c_void;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{FreeLibrary, HMODULE};
+use windows::Win32::Graphics::Dxgi::{
+    CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIFactory1,
+};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 
 #[derive(Debug, Clone, Default)]
@@ -189,10 +192,45 @@ pub struct GenericGpuProvider {
 
 impl GenericGpuProvider {
     pub fn try_new() -> Option<Self> {
-        Some(Self {
-            name: "Generic / Integrated GPU".to_string(),
-            vram_bytes: None,
-        })
+        let (name, vram_bytes) = query_dxgi_primary_gpu().unwrap_or_else(|| {
+            ("Generic GPU".to_string(), None)
+        });
+
+        Some(Self { name, vram_bytes })
+    }
+}
+
+fn query_dxgi_primary_gpu() -> Option<(String, Option<u64>)> {
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
+        let mut i = 0u32;
+        let mut best_adapter = None;
+        let mut max_vram = 0usize;
+
+        while let Ok(adapter) = factory.EnumAdapters1(i) {
+            if let Ok(desc) = adapter.GetDesc1() {
+                if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32) == 0 {
+                    let vram = desc.DedicatedVideoMemory;
+                    let end_pos = desc
+                        .Description
+                        .iter()
+                        .position(|&c| c == 0)
+                        .unwrap_or(desc.Description.len());
+                    let name = String::from_utf16_lossy(&desc.Description[..end_pos])
+                        .trim()
+                        .to_string();
+
+                    // Prioritize adapter with highest dedicated video memory
+                    if vram >= max_vram && !name.is_empty() {
+                        max_vram = vram;
+                        best_adapter = Some((name, if vram > 0 { Some(vram as u64) } else { None }));
+                    }
+                }
+            }
+            i += 1;
+        }
+
+        best_adapter
     }
 }
 
