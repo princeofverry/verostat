@@ -36,6 +36,7 @@ pub struct TrayManager {
     exit_id: MenuId,
     last_tooltip: String,
     last_icon_key: (TrayDisplayMode, u32),
+    last_toggle_time: Instant,
 }
 
 impl TrayManager {
@@ -151,6 +152,7 @@ impl TrayManager {
             exit_id,
             last_tooltip: String::new(),
             last_icon_key: (current_mode, 999),
+            last_toggle_time: Instant::now(),
         })
     }
 
@@ -162,23 +164,32 @@ impl TrayManager {
         is_running: Arc<AtomicBool>,
         benchmark_session: Arc<RwLock<Option<BenchmarkSession>>>,
     ) -> bool {
-        // Handle Tray Left Click
-        if let Ok(event) = TrayIconEvent::receiver().try_recv() {
+        // Handle Tray Left Click with debouncing and queue drain
+        let mut left_clicked = false;
+        while let Ok(event) = TrayIconEvent::receiver().try_recv() {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
             } = event
             {
+                left_clicked = true;
+            }
+        }
+
+        if left_clicked {
+            let now = Instant::now();
+            if now.duration_since(self.last_toggle_time) > std::time::Duration::from_millis(250) {
                 dashboard.toggle_visibility();
+                self.last_toggle_time = now;
             }
         }
 
         // Handle Menu Events
         if let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id == self.open_id {
-                dashboard.show();
-            } else if event.id == self.refresh_id {
+            if event.id == self.open_id || event.id == self.refresh_id {
+                while TrayIconEvent::receiver().try_recv().is_ok() {}
+                self.last_toggle_time = Instant::now();
                 dashboard.show();
             } else if event.id == self.benchmark_item.id() {
                 toggle_benchmark_session(&self.benchmark_item, &benchmark_session);

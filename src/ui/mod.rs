@@ -16,10 +16,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, GetClientRect, IsWindowVisible,
     PostQuitMessage, RegisterClassExW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, SystemParametersInfoW, GWLP_USERDATA, HCURSOR, HWND_TOPMOST,
-    SPI_GETWORKAREA, SWP_NOZORDER, SW_HIDE, SW_SHOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    WINDOW_EX_STYLE, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_PAINT,
-    WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+    ShowWindow, SystemParametersInfoW, BringWindowToTop, GWLP_USERDATA, HCURSOR, HWND_TOPMOST,
+    SPI_GETWORKAREA, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_PAINT,
+    WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_EX_TOPMOST,
 };
 
 use crate::app::SystemMetrics;
@@ -94,7 +94,7 @@ impl DashboardWindow {
             let _ = RegisterClassExW(&wc);
 
             let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default(),
+                WS_EX_TOPMOST,
                 WINDOW_CLASS_NAME,
                 WINDOW_TITLE,
                 WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
@@ -148,9 +148,7 @@ impl DashboardWindow {
             if IsWindowVisible(self.hwnd).as_bool() {
                 let _ = ShowWindow(self.hwnd, SW_HIDE);
             } else {
-                position_near_tray(self.hwnd);
-                let _ = ShowWindow(self.hwnd, SW_SHOW);
-                let _ = SetForegroundWindow(self.hwnd);
+                self.show();
             }
         }
     }
@@ -159,6 +157,7 @@ impl DashboardWindow {
         unsafe {
             position_near_tray(self.hwnd);
             let _ = ShowWindow(self.hwnd, SW_SHOW);
+            let _ = BringWindowToTop(self.hwnd);
             let _ = SetForegroundWindow(self.hwnd);
         }
     }
@@ -201,7 +200,7 @@ fn position_near_tray(hwnd: HWND) {
                 y,
                 WINDOW_WIDTH,
                 WINDOW_HEIGHT,
-                SWP_NOZORDER,
+                SWP_SHOWWINDOW,
             );
         }
     }
