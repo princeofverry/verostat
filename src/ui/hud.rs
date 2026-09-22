@@ -14,16 +14,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, GetClientRect, GetSystemMetrics, IsWindowVisible,
     RegisterClassExW, SendMessageW, SetForegroundWindow, SetLayeredWindowAttributes,
     SetWindowLongPtrW, SetWindowPos, ShowWindow, GWLP_USERDATA, HCURSOR, HTCAPTION,
-    HWND_TOPMOST, LWA_ALPHA, SM_CXSCREEN, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, WM_DESTROY,
-    WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_NCLBUTTONDOWN, WM_PAINT,
-    WM_RBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    HWND_TOPMOST, LWA_ALPHA, SM_CXSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
+    SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-use crate::app::SystemMetrics;
+use crate::app::{AppConfig, SystemMetrics};
 use crate::monitor::network::format_speed;
 use crate::monitor::WM_METRICS_UPDATED;
 
-const HUD_WIDTH: i32 = 360;
 const HUD_HEIGHT: i32 = 34;
 const HUD_CLASS_NAME: PCWSTR = w!("VeroStatFloatingHudClass");
 const HUD_TITLE: PCWSTR = w!("VeroStatHUD");
@@ -36,6 +36,7 @@ const COLOR_ACCENT_ORANGE: COLORREF = COLORREF(0x000B9EF5); // Amber #F59E0B
 
 struct HudContext {
     metrics: Arc<RwLock<SystemMetrics>>,
+    config: Arc<RwLock<AppConfig>>,
     font: HFONT,
 }
 
@@ -54,7 +55,10 @@ pub struct FloatingHud {
 }
 
 impl FloatingHud {
-    pub fn new(metrics: Arc<RwLock<SystemMetrics>>) -> Result<Self, String> {
+    pub fn new(
+        metrics: Arc<RwLock<SystemMetrics>>,
+        config: Arc<RwLock<AppConfig>>,
+    ) -> Result<Self, String> {
         unsafe {
             let hinstance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None)
                 .map_err(|e| format!("Failed to get module handle: {:?}", e))?;
@@ -68,8 +72,9 @@ impl FloatingHud {
 
             let _ = RegisterClassExW(&wc);
 
+            let initial_width = 310;
             let screen_w = GetSystemMetrics(SM_CXSCREEN);
-            let start_x = (screen_w - HUD_WIDTH) / 2;
+            let start_x = (screen_w - initial_width) / 2;
             let start_y = 12;
 
             let hwnd = CreateWindowExW(
@@ -79,7 +84,7 @@ impl FloatingHud {
                 WS_POPUP,
                 start_x,
                 start_y,
-                HUD_WIDTH,
+                initial_width,
                 HUD_HEIGHT,
                 None,
                 None,
@@ -88,11 +93,15 @@ impl FloatingHud {
             )
             .map_err(|e| format!("Failed to create HUD window: {:?}", e))?;
 
-            // 90% opacity (230 / 255)
+            // 90% opacity
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 230, LWA_ALPHA);
 
             let font = create_font(13, 600);
-            let context = Box::new(HudContext { metrics, font });
+            let context = Box::new(HudContext {
+                metrics,
+                config,
+                font,
+            });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(context) as isize);
 
             let _ = SetWindowPos(
@@ -100,7 +109,7 @@ impl FloatingHud {
                 HWND_TOPMOST,
                 start_x,
                 start_y,
-                HUD_WIDTH,
+                initial_width,
                 HUD_HEIGHT,
                 SWP_SHOWWINDOW,
             );
@@ -150,7 +159,6 @@ unsafe extern "system" fn hud_window_proc(
 
     match msg {
         WM_LBUTTONDOWN => {
-            // Allow dragging the HUD anywhere
             let _ = ReleaseCapture();
             let _ = SendMessageW(
                 hwnd,
@@ -161,7 +169,6 @@ unsafe extern "system" fn hud_window_proc(
             LRESULT(0)
         }
         WM_LBUTTONDBLCLK | WM_RBUTTONUP => {
-            // Double-click or Right-click hides the HUD
             let _ = ShowWindow(hwnd, SW_HIDE);
             LRESULT(0)
         }
@@ -178,7 +185,7 @@ unsafe extern "system" fn hud_window_proc(
             let mem_bmp = CreateCompatibleBitmap(hdc, width, height);
             let old_bmp = SelectObject(mem_dc, mem_bmp);
 
-            render_hud(mem_dc, width, height, ctx);
+            render_hud(hwnd, mem_dc, width, height, ctx);
 
             let _ = BitBlt(hdc, 0, 0, width, height, mem_dc, 0, 0, SRCCOPY);
 
@@ -204,12 +211,12 @@ unsafe extern "system" fn hud_window_proc(
 }
 
 unsafe fn render_hud(
+    hwnd: HWND,
     hdc: HDC,
     width: i32,
     height: i32,
     ctx: &HudContext,
 ) {
-    // 1. Background Pill
     let bg_brush = CreateSolidBrush(COLOR_HUD_BG);
     let full_rect = RECT {
         left: 0,
@@ -220,7 +227,6 @@ unsafe fn render_hud(
     FillRect(hdc, &full_rect, bg_brush);
     let _ = DeleteObject(bg_brush);
 
-    // Border
     let border_rect = RECT {
         left: 0,
         top: 0,
@@ -235,22 +241,53 @@ unsafe fn render_hud(
     SelectObject(hdc, ctx.font);
 
     let m = ctx.metrics.read().clone();
+    let cfg = ctx.config.read().clone();
 
-    // Stats
-    let cpu_u = m.cpu_usage.unwrap_or(0.0);
-    let cpu_t = m.cpu_temperature.map(|t| format!("{:.0}°C", t)).unwrap_or_else(|| "N/A".to_string());
-    let gpu_u = m.gpu_usage.map(|u| format!("{:.0}%", u)).unwrap_or_else(|| "N/A".to_string());
-    let gpu_t = m.gpu_temperature.map(|t| format!("{:.0}°C", t)).unwrap_or_else(|| "N/A".to_string());
-    let ram_gb = m.ram_used as f64 / 1024.0 / 1024.0 / 1024.0;
-    let dl_str = format_speed(m.download_speed);
+    let mut segments = Vec::new();
 
-    let hud_text = format!(
-        "CPU {:.0}% {}   |   GPU {} {}   |   RAM {:.1}G   |   ↓{}",
-        cpu_u, cpu_t,
-        gpu_u, gpu_t,
-        ram_gb,
-        dl_str
-    );
+    if cfg.hud_show_cpu {
+        let cpu_u = m.cpu_usage.unwrap_or(0.0);
+        let cpu_t = m.cpu_temperature.map(|t| format!("{:.0}°C", t)).unwrap_or_else(|| "N/A".to_string());
+        segments.push(format!("CPU {:.0}% {}", cpu_u, cpu_t));
+    }
+
+    if cfg.hud_show_gpu {
+        let gpu_u = m.gpu_usage.map(|u| format!("{:.0}%", u)).unwrap_or_else(|| "N/A".to_string());
+        let gpu_t = m.gpu_temperature.map(|t| format!("{:.0}°C", t)).unwrap_or_else(|| "N/A".to_string());
+        segments.push(format!("GPU {} {}", gpu_u, gpu_t));
+    }
+
+    if cfg.hud_show_ram {
+        let ram_gb = m.ram_used as f64 / 1024.0 / 1024.0 / 1024.0;
+        segments.push(format!("RAM {:.1}G", ram_gb));
+    }
+
+    if cfg.hud_show_network {
+        let dl_str = format_speed(m.download_speed);
+        segments.push(format!("↓{}", dl_str));
+    }
+
+    let hud_text = if !segments.is_empty() {
+        segments.join("   |   ")
+    } else {
+        "VeroStat HUD (Select elements in tray)".to_string()
+    };
+
+    // Calculate desired dynamic width based on number of active segments
+    let count = segments.len().max(1) as i32;
+    let desired_width = (count * 98) + 24;
+
+    if (desired_width - width).abs() > 8 {
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            desired_width,
+            HUD_HEIGHT,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
 
     let mut text_rect = RECT {
         left: 0,
@@ -259,7 +296,6 @@ unsafe fn render_hud(
         bottom: height,
     };
 
-    // Color based on temperatures
     let text_color = if m.cpu_temperature.unwrap_or(0.0) >= 85.0 || m.gpu_temperature.unwrap_or(0.0) >= 85.0 {
         COLOR_ACCENT_RED
     } else if m.cpu_temperature.unwrap_or(0.0) >= 75.0 || m.gpu_temperature.unwrap_or(0.0) >= 75.0 {

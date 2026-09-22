@@ -40,6 +40,14 @@ pub struct AppConfig {
     pub show_disk_stats: bool,
     /// Which metric to display on the dynamic taskbar tray icon
     pub tray_display_mode: TrayDisplayMode,
+    /// Floating HUD: Show CPU stats
+    pub hud_show_cpu: bool,
+    /// Floating HUD: Show GPU stats
+    pub hud_show_gpu: bool,
+    /// Floating HUD: Show RAM stats
+    pub hud_show_ram: bool,
+    /// Floating HUD: Show Network stats (default false)
+    pub hud_show_network: bool,
 }
 
 impl Default for AppConfig {
@@ -50,6 +58,10 @@ impl Default for AppConfig {
             high_temp_threshold: 85.0,
             show_disk_stats: true,
             tray_display_mode: TrayDisplayMode::default(),
+            hud_show_cpu: true,
+            hud_show_gpu: true,
+            hud_show_ram: true,
+            hud_show_network: false,
         }
     }
 }

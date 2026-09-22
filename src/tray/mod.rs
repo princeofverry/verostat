@@ -24,6 +24,10 @@ pub struct TrayManager {
     open_id: MenuId,
     refresh_id: MenuId,
     hud_item: CheckMenuItem,
+    hud_elem_cpu: CheckMenuItem,
+    hud_elem_gpu: CheckMenuItem,
+    hud_elem_ram: CheckMenuItem,
+    hud_elem_net: CheckMenuItem,
     benchmark_item: MenuItem,
     display_cpu_usage: CheckMenuItem,
     display_cpu_temp: CheckMenuItem,
@@ -48,10 +52,26 @@ impl TrayManager {
         let open_item = MenuItem::new("Open Dashboard", true, None);
         let refresh_item = MenuItem::new("Refresh", true, None);
         let hud_item = CheckMenuItem::new("In-Game HUD Overlay (Ctrl+Shift+O)", true, false, None);
+
+        // Submenu: HUD Elements selection
+        let cfg_read = config.read();
+        let hud_elements_submenu = Submenu::new("HUD Elements", true);
+        let hud_elem_cpu = CheckMenuItem::new("Show CPU", true, cfg_read.hud_show_cpu, None);
+        let hud_elem_gpu = CheckMenuItem::new("Show GPU", true, cfg_read.hud_show_gpu, None);
+        let hud_elem_ram = CheckMenuItem::new("Show RAM", true, cfg_read.hud_show_ram, None);
+        let hud_elem_net = CheckMenuItem::new("Show Network", true, cfg_read.hud_show_network, None);
+
+        hud_elements_submenu.append(&hud_elem_cpu).map_err(|e| e.to_string())?;
+        hud_elements_submenu.append(&hud_elem_gpu).map_err(|e| e.to_string())?;
+        hud_elements_submenu.append(&hud_elem_ram).map_err(|e| e.to_string())?;
+        hud_elements_submenu.append(&hud_elem_net).map_err(|e| e.to_string())?;
+
         let benchmark_item = MenuItem::new("▶ Start Benchmark Log", true, None);
 
         // Submenu: Tray Icon Display mode selection
-        let current_mode = config.read().tray_display_mode;
+        let current_mode = cfg_read.tray_display_mode;
+        drop(cfg_read);
+
         let display_submenu = Submenu::new("Tray Icon Display", true);
 
         let display_cpu_usage = CheckMenuItem::new(
@@ -118,6 +138,7 @@ impl TrayManager {
         menu.append(&open_item).map_err(|e| e.to_string())?;
         menu.append(&refresh_item).map_err(|e| e.to_string())?;
         menu.append(&hud_item).map_err(|e| e.to_string())?;
+        menu.append(&hud_elements_submenu).map_err(|e| e.to_string())?;
         menu.append(&benchmark_item).map_err(|e| e.to_string())?;
         menu.append(&display_submenu).map_err(|e| e.to_string())?;
         menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
@@ -143,6 +164,10 @@ impl TrayManager {
             open_id,
             refresh_id,
             hud_item,
+            hud_elem_cpu,
+            hud_elem_gpu,
+            hud_elem_ram,
+            hud_elem_net,
             benchmark_item,
             display_cpu_usage,
             display_cpu_temp,
@@ -203,6 +228,30 @@ impl TrayManager {
             } else if event.id == self.hud_item.id() {
                 hud.toggle_visibility();
                 self.hud_item.set_checked(hud.is_visible());
+            } else if event.id == self.hud_elem_cpu.id() {
+                let checked = !config.read().hud_show_cpu;
+                self.hud_elem_cpu.set_checked(checked);
+                config.write().hud_show_cpu = checked;
+                let _ = config.read().save();
+                unsafe { let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hud.hwnd, None, false); }
+            } else if event.id == self.hud_elem_gpu.id() {
+                let checked = !config.read().hud_show_gpu;
+                self.hud_elem_gpu.set_checked(checked);
+                config.write().hud_show_gpu = checked;
+                let _ = config.read().save();
+                unsafe { let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hud.hwnd, None, false); }
+            } else if event.id == self.hud_elem_ram.id() {
+                let checked = !config.read().hud_show_ram;
+                self.hud_elem_ram.set_checked(checked);
+                config.write().hud_show_ram = checked;
+                let _ = config.read().save();
+                unsafe { let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hud.hwnd, None, false); }
+            } else if event.id == self.hud_elem_net.id() {
+                let checked = !config.read().hud_show_network;
+                self.hud_elem_net.set_checked(checked);
+                config.write().hud_show_network = checked;
+                let _ = config.read().save();
+                unsafe { let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hud.hwnd, None, false); }
             } else if event.id == self.benchmark_item.id() {
                 toggle_benchmark_session(&self.benchmark_item, &benchmark_session);
             } else if event.id == self.display_cpu_usage.id() {
@@ -267,8 +316,7 @@ impl TrayManager {
             self.last_tooltip = new_tooltip;
         }
 
-
-        // 3. Update Dynamic Tray Icon based on user selected mode
+        // 2. Update Dynamic Tray Icon based on user selected mode
         let current_mode = config.read().tray_display_mode;
         let (val, is_temp) = match current_mode {
             TrayDisplayMode::CpuUsage => (m.cpu_usage.map(|u| u.round() as u32).unwrap_or(0), false),
@@ -436,6 +484,7 @@ fn show_about_dialog() {
         Features:\n\
         • Real-time CPU, GPU, RAM, & Network stats\n\
         • In-Game Floating HUD Overlay (Ctrl+Shift+O)\n\
+        • Customizable HUD Elements (Show CPU, GPU, RAM, Net)\n\
         • Global Hotkeys (Win+Shift+V / Ctrl+Shift+O)\n\
         • Customizable taskbar icon\n\
         • Top 3 Resource Hogs process viewer\n\
@@ -471,6 +520,7 @@ fn show_settings_dialog(config: &Arc<RwLock<AppConfig>>) {
     let msg = format!(
         "VeroStat Settings\n\n\
         • Tray Icon Display: {}\n\
+        • In-Game HUD: CPU {}, GPU {}, RAM {}, Net {}\n\
         • Refresh Interval: {} ms\n\
         • Start with Windows: {}\n\
         • High Temp Warning: {:.0}°C\n\
@@ -481,6 +531,10 @@ fn show_settings_dialog(config: &Arc<RwLock<AppConfig>>) {
         Configuration file is stored at:\n\
         {}\0",
         mode_str,
+        if cfg.hud_show_cpu { "ON" } else { "OFF" },
+        if cfg.hud_show_gpu { "ON" } else { "OFF" },
+        if cfg.hud_show_ram { "ON" } else { "OFF" },
+        if cfg.hud_show_network { "ON" } else { "OFF" },
         cfg.refresh_interval_ms,
         if cfg.start_with_windows { "Enabled" } else { "Disabled" },
         cfg.high_temp_threshold,

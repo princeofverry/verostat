@@ -43,7 +43,7 @@ fn main() {
         }
     };
 
-    let hud = match FloatingHud::new(state.metrics.clone()) {
+    let hud = match FloatingHud::new(state.metrics.clone(), state.config.clone()) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("Failed to create Floating HUD: {}", e);
