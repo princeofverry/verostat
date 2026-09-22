@@ -45,6 +45,7 @@ fn main() {
         state.config.clone(),
         state.is_running.clone(),
         ui_hwnd.clone(),
+        state.benchmark_session.clone(),
     );
 
     // 5. Initialize System Tray
@@ -78,6 +79,7 @@ fn main() {
                 state.config.clone(),
                 state.metrics.clone(),
                 state.is_running.clone(),
+                state.benchmark_session.clone(),
             );
 
             if !keep_running {

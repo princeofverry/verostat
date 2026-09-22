@@ -4,13 +4,14 @@ pub mod memory;
 pub mod network;
 pub mod sensors;
 
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
-use sysinfo::{Disks, System};
+use sysinfo::{Disks, ProcessRefreshKind, ProcessesToUpdate, System};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_USER};
 
@@ -20,7 +21,7 @@ pub use memory::MemoryMonitor;
 pub use network::NetworkMonitor;
 pub use sensors::SensorMonitor;
 
-use crate::app::{AppConfig, SystemMetrics};
+use crate::app::{AppConfig, BenchmarkSession, ProcessInfo, SystemMetrics};
 
 pub const WM_METRICS_UPDATED: u32 = WM_USER + 101;
 
@@ -52,7 +53,6 @@ impl MonitorCoordinator {
     }
 
     pub fn sample(&mut self) -> SystemMetrics {
-        // Refresh sysinfo core
         self.sys.refresh_cpu_all();
         self.sys.refresh_memory();
 
@@ -84,6 +84,34 @@ impl MonitorCoordinator {
             0.0
         };
 
+        // 6. Top 3 Resource Hogs (refreshed every tick)
+        self.sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cpu().with_memory(),
+        );
+        let mut top_processes: Vec<ProcessInfo> = self
+            .sys
+            .processes()
+            .values()
+            .filter(|p| {
+                let name = p.name().to_string_lossy();
+                name != "System Idle Process" && name != "System" && !name.is_empty()
+            })
+            .map(|p| ProcessInfo {
+                name: p.name().to_string_lossy().to_string(),
+                cpu_usage: p.cpu_usage(),
+                memory_bytes: p.memory(),
+            })
+            .collect();
+
+        top_processes.sort_by(|a, b| {
+            b.cpu_usage
+                .partial_cmp(&a.cpu_usage)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        top_processes.truncate(3);
+
         SystemMetrics {
             cpu_usage: Some(cpu_data.usage),
             cpu_temperature: cpu_temp,
@@ -107,6 +135,8 @@ impl MonitorCoordinator {
             disk_total,
             disk_usage,
 
+            top_processes,
+
             updated_at: Instant::now(),
         }
     }
@@ -118,6 +148,7 @@ pub fn spawn_monitoring_thread(
     config: Arc<RwLock<AppConfig>>,
     is_running: Arc<AtomicBool>,
     ui_hwnd: Arc<RwLock<Option<isize>>>,
+    benchmark_session: Arc<RwLock<Option<BenchmarkSession>>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut coordinator = MonitorCoordinator::new();
@@ -150,6 +181,34 @@ pub fn spawn_monitoring_thread(
 
             // Collect metrics
             let snapshot = coordinator.sample();
+
+            // Handle benchmark CSV session logging
+            if let Some(session) = benchmark_session.write().as_mut() {
+                session.sample_count += 1;
+                let cpu_u = snapshot.cpu_usage.unwrap_or(0.0);
+                let cpu_t = snapshot.cpu_temperature.unwrap_or(0.0);
+                let gpu_u = snapshot.gpu_usage.unwrap_or(0.0);
+                let gpu_t = snapshot.gpu_temperature.unwrap_or(0.0);
+                let ram_u = snapshot.ram_usage;
+                let ram_mb = snapshot.ram_used / 1024 / 1024;
+                let dl_kb = snapshot.download_speed / 1024;
+                let ul_kb = snapshot.upload_speed / 1024;
+
+                session.peak_cpu_temp = session.peak_cpu_temp.max(cpu_t);
+                session.peak_gpu_temp = session.peak_gpu_temp.max(gpu_t);
+                session.peak_cpu_usage = session.peak_cpu_usage.max(cpu_u);
+                session.peak_gpu_usage = session.peak_gpu_usage.max(gpu_u);
+                session.sum_cpu_usage += cpu_u as f64;
+                session.sum_gpu_usage += gpu_u as f64;
+
+                let elapsed_secs = session.start_time.elapsed().as_secs();
+                let _ = writeln!(
+                    session.file,
+                    "{},{:.1},{:.1},{:.1},{:.1},{:.1},{},{},{}",
+                    elapsed_secs, cpu_u, cpu_t, gpu_u, gpu_t, ram_u, ram_mb, dl_kb, ul_kb
+                );
+            }
+
             *metrics_sink.write() = snapshot;
 
             // Notify UI if window exists

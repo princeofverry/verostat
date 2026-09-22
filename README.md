@@ -40,14 +40,16 @@ Prioritizes: **Low resource usage > reliability > simplicity > clean aesthetics*
     - **Start with Windows** (toggle registry autostart)
     - **About**
     - **Exit**
-  - Dynamic tray icon tooltip showing live CPU, RAM, and GPU stats
+  - **Dynamic Taskbar Icon**: Renders live CPU percentage digits directly on the system tray icon with color-coded load levels (sky blue, amber, crimson).
+  - Dynamic tray icon tooltip showing live CPU temp, GPU temp, RAM %, and network speed on hover.
+  - **Benchmark Session Logger**: Click *Start Benchmark Log* in the tray menu to record hardware metrics every second to a CSV file; stopping displays a full summary with peak temperatures and averages.
+- ⚡ **Top 3 Resource Hogs**:
+  - Displays the 3 most CPU-heavy active processes directly on the dashboard with their CPU % and RAM usage.
 - 🎨 **Minimal Dark Dashboard**:
-  - Native Win32 GDI double-buffered rendering (no heavy web runtimes, Electron, or WGPU bloat)
+  - Ultra-compact, clean layout (280 × 470 px) with native Win32 GDI double-buffered rendering
   - Windows 10/11 immersive dark mode caption bar
   - Auto-docked above system tray notification area
   - Press `Esc` or close button to minimize back to tray
-  - Temperature threshold warnings (accent colors shift to amber/crimson on high temp)
-
 ---
 
 ## Architecture
@@ -100,7 +102,9 @@ verostat/
     │   ├── network.rs
     │   └── sensors.rs
     ├── tray/
-    │   └── mod.rs
+    │   ├── mod.rs
+    │   └── icon_gen.rs
+    │
     └── ui/
         └── mod.rs
 ```

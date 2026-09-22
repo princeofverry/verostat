@@ -1,9 +1,19 @@
+use std::fs::File;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Instant;
 use parking_lot::RwLock;
 
 use super::config::AppConfig;
+
+/// Lightweight process info for Top Resource Hogs
+#[derive(Debug, Clone, Default)]
+pub struct ProcessInfo {
+    pub name: String,
+    pub cpu_usage: f32,
+    pub memory_bytes: u64,
+}
 
 /// System metrics snapshot containing hardware and network data.
 #[derive(Debug, Clone)]
@@ -35,6 +45,9 @@ pub struct SystemMetrics {
     pub disk_total: u64, // in bytes
     pub disk_usage: f32, // percentage 0.0 - 100.0
 
+    // Top 3 Resource Hogs
+    pub top_processes: Vec<ProcessInfo>,
+
     #[allow(dead_code)]
     pub updated_at: Instant,
 }
@@ -64,9 +77,25 @@ impl Default for SystemMetrics {
             disk_total: 0,
             disk_usage: 0.0,
 
+            top_processes: Vec::new(),
+
             updated_at: Instant::now(),
         }
     }
+}
+
+/// Active benchmark / logging session
+pub struct BenchmarkSession {
+    pub file_path: PathBuf,
+    pub file: File,
+    pub start_time: Instant,
+    pub sample_count: u64,
+    pub peak_cpu_temp: f32,
+    pub peak_gpu_temp: f32,
+    pub peak_cpu_usage: f32,
+    pub peak_gpu_usage: f32,
+    pub sum_cpu_usage: f64,
+    pub sum_gpu_usage: f64,
 }
 
 /// Shared application state
@@ -75,6 +104,7 @@ pub struct AppState {
     pub metrics: Arc<RwLock<SystemMetrics>>,
     pub config: Arc<RwLock<AppConfig>>,
     pub is_running: Arc<AtomicBool>,
+    pub benchmark_session: Arc<RwLock<Option<BenchmarkSession>>>,
 }
 
 impl AppState {
@@ -83,6 +113,7 @@ impl AppState {
             metrics: Arc::new(RwLock::new(SystemMetrics::default())),
             config: Arc::new(RwLock::new(config)),
             is_running: Arc::new(AtomicBool::new(true)),
+            benchmark_session: Arc::new(RwLock::new(None)),
         }
     }
 }

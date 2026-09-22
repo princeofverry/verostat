@@ -28,7 +28,7 @@ use crate::monitor::WM_METRICS_UPDATED;
 
 // Compact, minimal window dimensions (280 x 390)
 const WINDOW_WIDTH: i32 = 280;
-const WINDOW_HEIGHT: i32 = 390;
+const WINDOW_HEIGHT: i32 = 470;
 const WINDOW_CLASS_NAME: PCWSTR = w!("VeroStatDashboardClass");
 const WINDOW_TITLE: PCWSTR = w!("VeroStat");
 
@@ -444,6 +444,42 @@ unsafe fn render_dashboard(
         format_speed(metrics.upload_speed)
     );
     draw_text_line(hdc, pad_x, y, &net_text, DT_LEFT);
+    y += 24;
+
+    // ------------------------------------------------------------------------
+    // TOP PROCESSES Section
+    // ------------------------------------------------------------------------
+    draw_line(hdc, pad_x, y, width - pad_x, COLOR_BORDER);
+    y += 10;
+
+    SelectObject(hdc, ctx.font_label);
+    SetTextColor(hdc, COLOR_TEXT_LABEL);
+    draw_text_line(hdc, pad_x, y, "TOP PROCESSES", DT_LEFT);
+    y += 18;
+
+    if metrics.top_processes.is_empty() {
+        SelectObject(hdc, ctx.font_small);
+        SetTextColor(hdc, COLOR_TEXT_DIM);
+        draw_text_line(hdc, pad_x, y, "Scanning processes...", DT_LEFT);
+    } else {
+        for (i, proc) in metrics.top_processes.iter().enumerate() {
+            let mem_mb = proc.memory_bytes / 1024 / 1024;
+            let right_str = if mem_mb >= 1024 {
+                format!("{:.0}% • {:.1} GB", proc.cpu_usage, mem_mb as f64 / 1024.0)
+            } else {
+                format!("{:.0}% • {} MB", proc.cpu_usage, mem_mb)
+            };
+            let proc_display = format!("{}. {}", i + 1, shorten_name(&proc.name, 14));
+
+            SelectObject(hdc, ctx.font_small);
+            SetTextColor(hdc, COLOR_TEXT_PRIMARY);
+            draw_text_line(hdc, pad_x, y, &proc_display, DT_LEFT);
+
+            SetTextColor(hdc, COLOR_TEXT_DIM);
+            draw_text_line(hdc, pad_x + content_w, y, &right_str, DT_RIGHT);
+            y += 17;
+        }
+    }
 
     // Footer
     let footer_y = height - 18;
