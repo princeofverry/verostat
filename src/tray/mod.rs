@@ -10,6 +10,7 @@ use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, M
 
 use crate::app::config::{is_autostart_enabled, set_autostart, AppConfig};
 use crate::app::SystemMetrics;
+use crate::monitor::network::format_speed;
 use crate::ui::DashboardWindow;
 
 pub struct TrayManager {
@@ -127,26 +128,24 @@ impl TrayManager {
             }
         }
 
-        // Update Tooltip periodically if metrics changed
+        // Update Tooltip with complete metrics including temperatures
         let m = metrics.read();
-        let cpu_str = m.cpu_usage.map(|u| format!("{:.0}%", u)).unwrap_or_else(|| "N/A".to_string());
+        let cpu_usage_str = m.cpu_usage.map(|u| format!("{:.0}%", u)).unwrap_or_else(|| "N/A".to_string());
+        let cpu_temp_str = m.cpu_temperature.map(|t| format!(" ({:.0}°C)", t)).unwrap_or_default();
+
+        let gpu_usage_str = m.gpu_usage.map(|u| format!("{:.0}%", u)).unwrap_or_else(|| "N/A".to_string());
+        let gpu_temp_str = m.gpu_temperature.map(|t| format!(" ({:.0}°C)", t)).unwrap_or_default();
+
         let ram_str = format!("{:.0}%", m.ram_usage);
-        let gpu_str = m.gpu_usage.map(|u| format!("{:.0}%", u)).unwrap_or_else(|| "N/A".to_string());
+        let net_str = format!("↓{} ↑{}", format_speed(m.download_speed), format_speed(m.upload_speed));
 
-        let high_thresh = config.read().high_temp_threshold;
-        let mut warn_suffix = String::new();
-        if let Some(t) = m.cpu_temperature {
-            if t >= high_thresh {
-                warn_suffix.push_str(&format!("\n⚠️ High CPU Temp: {:.0}°C!", t));
-            }
-        }
-        if let Some(t) = m.gpu_temperature {
-            if t >= high_thresh {
-                warn_suffix.push_str(&format!("\n⚠️ High GPU Temp: {:.0}°C!", t));
-            }
-        }
+        let new_tooltip = format!(
+            "VeroStat\nCPU: {}{} | RAM: {}\nGPU: {}{}\nNet: {}",
+            cpu_usage_str, cpu_temp_str, ram_str,
+            gpu_usage_str, gpu_temp_str,
+            net_str
+        );
 
-        let new_tooltip = format!("VeroStat\nCPU: {} | RAM: {}\nGPU: {}{}", cpu_str, ram_str, gpu_str, warn_suffix);
         if new_tooltip != self.last_tooltip {
             let _ = self._tray.set_tooltip(Some(&new_tooltip));
             self.last_tooltip = new_tooltip;
