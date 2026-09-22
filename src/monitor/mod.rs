@@ -84,12 +84,13 @@ impl MonitorCoordinator {
             0.0
         };
 
-        // 6. Top 3 Resource Hogs (refreshed every tick)
+        // 6. Top 3 Resource Hogs
         self.sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
             ProcessRefreshKind::nothing().with_cpu().with_memory(),
         );
+
         let mut top_processes: Vec<ProcessInfo> = self
             .sys
             .processes()
@@ -147,13 +148,12 @@ pub fn spawn_monitoring_thread(
     metrics_sink: Arc<RwLock<SystemMetrics>>,
     config: Arc<RwLock<AppConfig>>,
     is_running: Arc<AtomicBool>,
-    ui_hwnd: Arc<RwLock<Option<isize>>>,
+    ui_hwnds: Arc<RwLock<Vec<isize>>>,
     benchmark_session: Arc<RwLock<Option<BenchmarkSession>>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut coordinator = MonitorCoordinator::new();
 
-        // Take initial snapshot immediately
         let initial_metrics = coordinator.sample();
         *metrics_sink.write() = initial_metrics;
 
@@ -163,7 +163,6 @@ pub fn spawn_monitoring_thread(
                 cfg.refresh_interval_ms.max(250)
             };
 
-            // Sleep in short chunks to allow rapid shutdown
             let chunk = Duration::from_millis(100);
             let elapsed_target = Duration::from_millis(interval_ms);
             let start = Instant::now();
@@ -179,10 +178,8 @@ pub fn spawn_monitoring_thread(
                 return;
             }
 
-            // Collect metrics
             let snapshot = coordinator.sample();
 
-            // Handle benchmark CSV session logging
             if let Some(session) = benchmark_session.write().as_mut() {
                 session.sample_count += 1;
                 let cpu_u = snapshot.cpu_usage.unwrap_or(0.0);
@@ -211,8 +208,8 @@ pub fn spawn_monitoring_thread(
 
             *metrics_sink.write() = snapshot;
 
-            // Notify UI if window exists
-            if let Some(hwnd_raw) = *ui_hwnd.read() {
+            // Notify all active UI windows (Dashboard and HUD)
+            for &hwnd_raw in ui_hwnds.read().iter() {
                 unsafe {
                     let hwnd = HWND(hwnd_raw as *mut std::ffi::c_void);
                     let _ = PostMessageW(hwnd, WM_METRICS_UPDATED, WPARAM(0), LPARAM(0));

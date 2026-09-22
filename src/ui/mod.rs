@@ -1,3 +1,6 @@
+pub mod hud;
+pub use hud::FloatingHud;
+
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

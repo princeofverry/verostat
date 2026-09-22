@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Check
+        run: cargo check --verbose
+
+      - name: Cargo Build Release
+        run: cargo build --release --verbose
+
+      - name: Verify Binary Output
+        run: |
+          if (Test-Path "target\release\verostat.exe") {
+            Write-Host "Build succeeded! Binary exists."
+            Get-Item "target\release\verostat.exe" | Select-Object Name, Length
+          } else {
+            Write-Error "Binary target\release\verostat.exe not found!"
+            exit 1
+          }

@@ -46,6 +46,13 @@ Prioritizes: **Low resource usage > reliability > simplicity > clean aesthetics*
   - Dynamic tray icon tooltip showing live CPU temp, GPU temp, RAM %, and network speed on hover.
   - **Benchmark Session Logger**: Click *Start Benchmark Log* in the tray menu to record hardware metrics every second to a CSV file; stopping displays a full summary with peak temperatures and averages.
   - Displays the 3 most CPU-heavy active processes directly on the dashboard with their CPU % and RAM usage.
+- 🎮 **In-Game Floating HUD Overlay**:
+  - Mini translucent horizontal bar (`CPU 34% 52°C | GPU 72% 61°C | RAM 11.2G | ↓2.4M`)
+  - Always on top, draggable anywhere on screen, double-click or right-click to hide
+  - Toggle via menu or Global Hotkey `Ctrl + Shift + O`
+- ⌨️ **Global Hotkeys**:
+  - `Win + Shift + V`: Instantly toggle Dashboard
+  - `Ctrl + Shift + O`: Instantly toggle In-Game Floating HUD
 - 🎨 **Minimal Dark Dashboard**:
   - Ultra-compact, clean layout (280 × 470 px) with native Win32 GDI double-buffered rendering
   - Windows 10/11 immersive dark mode caption bar

@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Release Binary
+        run: cargo build --release
+
+      - name: Prepare Release Assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "staging"
+          Copy-Item "target\release\verostat.exe" -Destination "staging\verostat.exe"
+          Copy-Item "README.md" -Destination "staging\README.md"
+          
+          # Create zip package
+          Compress-Archive -Path "staging\*" -DestinationPath "verostat-windows-x64.zip" -Force
+          
+          # Generate SHA256 checksums
+          $exeHash = (Get-FileHash "target\release\verostat.exe" -Algorithm SHA256).Hash
+          $zipHash = (Get-FileHash "verostat-windows-x64.zip" -Algorithm SHA256).Hash
+          
+          Set-Content -Path "checksums.txt" -Value "verostat.exe SHA256: $exeHash`nverostat-windows-x64.zip SHA256: $zipHash"
+          Write-Host "Generated checksums:"
+          Get-Content "checksums.txt"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            target/release/verostat.exe
+            verostat-windows-x64.zip
+            checksums.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false

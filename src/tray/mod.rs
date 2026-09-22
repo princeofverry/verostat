@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use muda::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use parking_lot::RwLock;
@@ -16,13 +16,14 @@ use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, M
 use crate::app::config::{is_autostart_enabled, set_autostart, AppConfig, TrayDisplayMode};
 use crate::app::{BenchmarkSession, SystemMetrics};
 use crate::monitor::network::format_speed;
-use crate::ui::DashboardWindow;
+use crate::ui::{DashboardWindow, FloatingHud};
 use icon_gen::{generate_logo_icon, generate_stat_icon};
 
 pub struct TrayManager {
     _tray: TrayIcon,
     open_id: MenuId,
     refresh_id: MenuId,
+    hud_item: CheckMenuItem,
     benchmark_item: MenuItem,
     display_cpu_usage: CheckMenuItem,
     display_cpu_temp: CheckMenuItem,
@@ -46,6 +47,7 @@ impl TrayManager {
         let title_item = MenuItem::new("VeroStat", false, None);
         let open_item = MenuItem::new("Open Dashboard", true, None);
         let refresh_item = MenuItem::new("Refresh", true, None);
+        let hud_item = CheckMenuItem::new("In-Game HUD Overlay (Ctrl+Shift+O)", true, false, None);
         let benchmark_item = MenuItem::new("▶ Start Benchmark Log", true, None);
 
         // Submenu: Tray Icon Display mode selection
@@ -115,6 +117,7 @@ impl TrayManager {
         menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
         menu.append(&open_item).map_err(|e| e.to_string())?;
         menu.append(&refresh_item).map_err(|e| e.to_string())?;
+        menu.append(&hud_item).map_err(|e| e.to_string())?;
         menu.append(&benchmark_item).map_err(|e| e.to_string())?;
         menu.append(&display_submenu).map_err(|e| e.to_string())?;
         menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
@@ -139,6 +142,7 @@ impl TrayManager {
             _tray: tray,
             open_id,
             refresh_id,
+            hud_item,
             benchmark_item,
             display_cpu_usage,
             display_cpu_temp,
@@ -156,9 +160,14 @@ impl TrayManager {
         })
     }
 
+    pub fn set_hud_checked(&self, checked: bool) {
+        self.hud_item.set_checked(checked);
+    }
+
     pub fn handle_events(
         &mut self,
         dashboard: &DashboardWindow,
+        hud: &FloatingHud,
         config: Arc<RwLock<AppConfig>>,
         metrics: Arc<RwLock<SystemMetrics>>,
         is_running: Arc<AtomicBool>,
@@ -179,7 +188,7 @@ impl TrayManager {
 
         if left_clicked {
             let now = Instant::now();
-            if now.duration_since(self.last_toggle_time) > std::time::Duration::from_millis(250) {
+            if now.duration_since(self.last_toggle_time) > Duration::from_millis(250) {
                 dashboard.toggle_visibility();
                 self.last_toggle_time = now;
             }
@@ -191,6 +200,9 @@ impl TrayManager {
                 while TrayIconEvent::receiver().try_recv().is_ok() {}
                 self.last_toggle_time = Instant::now();
                 dashboard.show();
+            } else if event.id == self.hud_item.id() {
+                hud.toggle_visibility();
+                self.hud_item.set_checked(hud.is_visible());
             } else if event.id == self.benchmark_item.id() {
                 toggle_benchmark_session(&self.benchmark_item, &benchmark_session);
             } else if event.id == self.display_cpu_usage.id() {
@@ -255,7 +267,8 @@ impl TrayManager {
             self.last_tooltip = new_tooltip;
         }
 
-        // 2. Update Dynamic Tray Icon based on user selected mode
+
+        // 3. Update Dynamic Tray Icon based on user selected mode
         let current_mode = config.read().tray_display_mode;
         let (val, is_temp) = match current_mode {
             TrayDisplayMode::CpuUsage => (m.cpu_usage.map(|u| u.round() as u32).unwrap_or(0), false),
@@ -297,7 +310,6 @@ impl TrayManager {
             let _ = cfg.save();
         }
 
-        // Force icon refresh on next tick
         self.last_icon_key = (mode, 9999);
     }
 }
@@ -423,7 +435,9 @@ fn show_about_dialog() {
         A lightweight native Windows system-tray utility.\n\n\
         Features:\n\
         • Real-time CPU, GPU, RAM, & Network stats\n\
-        • Customizable taskbar icon (CPU %, Temp, GPU %, RAM, or Logo)\n\
+        • In-Game Floating HUD Overlay (Ctrl+Shift+O)\n\
+        • Global Hotkeys (Win+Shift+V / Ctrl+Shift+O)\n\
+        • Customizable taskbar icon\n\
         • Top 3 Resource Hogs process viewer\n\
         • Benchmark session CSV logging & peak reporting\n\
         • Native Win32 dark dashboard\n\
@@ -461,9 +475,11 @@ fn show_settings_dialog(config: &Arc<RwLock<AppConfig>>) {
         • Start with Windows: {}\n\
         • High Temp Warning: {:.0}°C\n\
         • Show Storage Stats: {}\n\n\
+        Hotkeys:\n\
+        • Win + Shift + V : Toggle Dashboard\n\
+        • Ctrl + Shift + O : Toggle In-Game HUD Overlay\n\n\
         Configuration file is stored at:\n\
-        {}\n\n\
-        (You can switch Tray Icon Display directly from the tray menu!)\0",
+        {}\0",
         mode_str,
         cfg.refresh_interval_ms,
         if cfg.start_with_windows { "Enabled" } else { "Disabled" },
