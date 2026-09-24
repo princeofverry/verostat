@@ -319,9 +319,9 @@ unsafe fn render_inspector(
     // Find peak core clock
     let max_mhz = m.cpu_cores.iter().map(|c| c.frequency_mhz).max().unwrap_or(0);
     let peak_str = if max_mhz >= 1000 {
-        format!("{:.2} GHz ⚡", max_mhz as f64 / 1000.0)
+        format!("{:.2} GHz", max_mhz as f64 / 1000.0)
     } else if max_mhz > 0 {
-        format!("{} MHz ⚡", max_mhz)
+        format!("{} MHz", max_mhz)
     } else {
         "N/A".to_string()
     };
@@ -413,14 +413,13 @@ unsafe fn render_inspector(
         FillRect(hdc, &item_rect, item_bg);
         let _ = DeleteObject(item_bg);
 
-        let is_peak = max_mhz > 0 && core.frequency_mhz >= max_mhz.saturating_sub(60);
-        let item_border = CreateSolidBrush(if is_peak { brand_color } else { COLOR_BORDER });
+        let item_border = CreateSolidBrush(COLOR_BORDER);
         let _ = FrameRect(hdc, &item_rect, item_border);
         let _ = DeleteObject(item_border);
 
-        // 1. Thread Label (Left, strictly bounded)
+        // 1. Thread Label (Left, subtle slate like card labels)
         SelectObject(hdc, ctx.font_core);
-        SetTextColor(hdc, COLOR_TEXT_PRIMARY);
+        SetTextColor(hdc, COLOR_TEXT_DIM);
         let mut t_rc = RECT {
             left: item_x + 8,
             top: item_y + 4,
@@ -438,16 +437,15 @@ unsafe fn render_inspector(
             "-".to_string()
         };
 
-        // 2. Frequency (Center, strictly bounded, cannot collide with usage)
-        SetTextColor(hdc, if is_peak { brand_color } else { COLOR_TEXT_LABEL });
-        let freq_with_tag = if is_peak { format!("{} ⚡", freq_str) } else { freq_str };
+        // 2. Frequency (Center, clean crisp white)
+        SetTextColor(hdc, COLOR_TEXT_PRIMARY);
         let mut f_rc = RECT {
             left: item_x + 38,
             top: item_y + 4,
             right: item_x + col_w - 52,
             bottom: item_y + 20,
         };
-        let mut w_freq: Vec<u16> = freq_with_tag.encode_utf16().collect();
+        let mut w_freq: Vec<u16> = freq_str.encode_utf16().collect();
         let _ = windows::Win32::Graphics::Gdi::DrawTextW(hdc, &mut w_freq, &mut f_rc, DT_LEFT | DT_SINGLELINE);
 
         // 3. Usage % (Right, strictly bounded)
