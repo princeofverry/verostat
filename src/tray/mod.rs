@@ -528,21 +528,24 @@ fn load_default_logo_icon() -> Result<Icon, String> {
 
 fn show_about_dialog() {
     let title: Vec<u16> = "About VeroStat\0".encode_utf16().collect();
-    let text: Vec<u16> = "VeroStat v0.1.0\n\n\
+    let msg = format!(
+        "VeroStat v{}\n\n\
         A lightweight native Windows system-tray utility.\n\n\
         Features:\n\
         • Real-time CPU, GPU, RAM, & Network stats\n\
         • In-Game Floating HUD Overlay (Ctrl+Shift+O)\n\
-        • Customizable HUD Elements (Show CPU, GPU, RAM, Net)\n\
+        • Customizable HUD Elements & Opacity\n\
+        • Dynamic Hardware Brand Theming (Intel/AMD/NVIDIA)\n\
         • Global Hotkeys (Win+Shift+V / Ctrl+Shift+O)\n\
         • Customizable taskbar icon\n\
         • Top 3 Resource Hogs process viewer\n\
         • Benchmark session CSV logging & peak reporting\n\
         • Native Win32 dark dashboard\n\
         • Ultra-low resource usage (< 45 MB RAM, 0% CPU)\n\n\
-        Press Esc or Close button to minimize to tray.\0"
-        .encode_utf16()
-        .collect();
+        Press Esc or Close button to minimize to tray.\0",
+        env!("CARGO_PKG_VERSION")
+    );
+    let text: Vec<u16> = msg.encode_utf16().collect();
 
     unsafe {
         MessageBoxW(
