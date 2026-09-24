@@ -20,11 +20,11 @@ Primary design priority: **Low resource usage > reliability > simplicity > clean
 src/
 ├── main.rs              # Win32 message loop, COM init, global hotkeys, thread coordination
 ├── app/
-│   ├── mod.rs           # Re-exports configuration and state types
+│   ├── mod.rs           # Re-exports configuration, state, and specs types
 │   ├── config.rs        # TOML config (%APPDATA%\VeroStat\config.toml) & HKCU Run registry autostart
-│   └── state.rs         # SystemMetrics snapshot, BenchmarkSession, and AppState
+│   ├── specs.rs         # Formatted hardware specs summary & native clipboard copy
+│   └── state.rs         # SystemMetrics snapshot, CoreInfo, BenchmarkSession, and AppState
 ├── monitor/
-│   ├── mod.rs           # Background thread coordinator, process hogs, disk polling
 │   ├── cpu.rs           # CPU usage percentage, brand model, frequency
 │   ├── gpu.rs           # Dynamic NVML loader (nvml.dll) + DXGI (dxgi.dll) fallback
 │   ├── memory.rs        # RAM usage and capacity
@@ -35,8 +35,8 @@ src/
 │   └── icon_gen.rs      # Dynamic 32x32 pixel font icon generator (0-99 numbers & logo)
 └── ui/
     ├── mod.rs           # Compact dark dashboard window (280x470, Segoe UI, double-buffered GDI)
-    └── hud.rs           # Mini In-Game Floating HUD overlay (360x34, 90% alpha, draggable)
-```
+    ├── hud.rs           # Mini In-Game Floating HUD overlay (360x34, 90% alpha, draggable)
+    └── core_inspector.rs# Dedicated CPU Core Inspector window (per-core clock & utilization matrix)
 
 ---
 
@@ -86,3 +86,4 @@ powershell -Command "Get-Process -Name verostat -ErrorAction SilentlyContinue | 
 
 - `Win + Shift + V`: Toggle Dashboard window.
 - `Ctrl + Shift + O`: Toggle In-Game Floating HUD overlay.
+- `Ctrl + Shift + C`: Toggle CPU Core Inspector window.

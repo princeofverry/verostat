@@ -16,12 +16,14 @@ use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, M
 use crate::app::config::{is_autostart_enabled, set_autostart, AppConfig, TrayDisplayMode};
 use crate::app::{BenchmarkSession, SystemMetrics};
 use crate::monitor::network::format_speed;
-use crate::ui::{DashboardWindow, FloatingHud};
+use crate::ui::{CoreInspectorWindow, DashboardWindow, FloatingHud};
 use icon_gen::{generate_logo_icon, generate_stat_icon};
 
 pub struct TrayManager {
     _tray: TrayIcon,
     open_id: MenuId,
+    inspector_id: MenuId,
+    copy_specs_id: MenuId,
     refresh_id: MenuId,
     hud_item: CheckMenuItem,
     hud_elem_cpu: CheckMenuItem,
@@ -55,6 +57,8 @@ impl TrayManager {
 
         let title_item = MenuItem::new("VeroStat", false, None);
         let open_item = MenuItem::new("Open Dashboard", true, None);
+        let inspector_item = MenuItem::new("CPU Core Inspector (Ctrl+Shift+C)", true, None);
+        let copy_specs_item = MenuItem::new("📋 Copy System Specs", true, None);
         let refresh_item = MenuItem::new("Refresh", true, None);
         let hud_item = CheckMenuItem::new("In-Game HUD Overlay (Ctrl+Shift+O)", true, false, None);
 
@@ -147,6 +151,8 @@ impl TrayManager {
         let exit_item = MenuItem::new("Exit", true, None);
 
         let open_id = open_item.id().clone();
+        let inspector_id = inspector_item.id().clone();
+        let copy_specs_id = copy_specs_item.id().clone();
         let refresh_id = refresh_item.id().clone();
         let settings_id = settings_item.id().clone();
         let about_id = about_item.id().clone();
@@ -155,7 +161,10 @@ impl TrayManager {
         menu.append(&title_item).map_err(|e| e.to_string())?;
         menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
         menu.append(&open_item).map_err(|e| e.to_string())?;
+        menu.append(&inspector_item).map_err(|e| e.to_string())?;
+        menu.append(&copy_specs_item).map_err(|e| e.to_string())?;
         menu.append(&refresh_item).map_err(|e| e.to_string())?;
+        menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
         menu.append(&hud_item).map_err(|e| e.to_string())?;
         menu.append(&hud_elements_submenu).map_err(|e| e.to_string())?;
         menu.append(&hud_opacity_submenu).map_err(|e| e.to_string())?;
@@ -182,6 +191,8 @@ impl TrayManager {
         Ok(Self {
             _tray: tray,
             open_id,
+            inspector_id,
+            copy_specs_id,
             refresh_id,
             hud_item,
             hud_elem_cpu,
@@ -218,6 +229,7 @@ impl TrayManager {
         &mut self,
         dashboard: &DashboardWindow,
         hud: &FloatingHud,
+        inspector: &CoreInspectorWindow,
         config: Arc<RwLock<AppConfig>>,
         metrics: Arc<RwLock<SystemMetrics>>,
         is_running: Arc<AtomicBool>,
@@ -250,6 +262,15 @@ impl TrayManager {
                 while TrayIconEvent::receiver().try_recv().is_ok() {}
                 self.last_toggle_time = Instant::now();
                 dashboard.show();
+            } else if event.id == self.inspector_id {
+                inspector.toggle_visibility();
+            } else if event.id == self.copy_specs_id {
+                let specs = crate::app::format_system_specs(&metrics.read());
+                if let Err(e) = crate::app::copy_to_clipboard(&specs) {
+                    show_message_box("VeroStat - Error", &format!("Failed to copy specs to clipboard: {}", e));
+                } else {
+                    show_message_box("VeroStat", "System specifications copied to clipboard!\n\nYou can now paste (Ctrl+V) it anywhere.");
+                }
             } else if event.id == self.hud_item.id() {
                 hud.toggle_visibility();
                 self.hud_item.set_checked(hud.is_visible());

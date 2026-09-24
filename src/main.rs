@@ -19,11 +19,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use app::{AppConfig, AppState};
 use monitor::spawn_monitoring_thread;
 use tray::TrayManager;
-use ui::{DashboardWindow, FloatingHud};
+use ui::{CoreInspectorWindow, DashboardWindow, FloatingHud};
 
 const HOTKEY_ID_DASHBOARD: i32 = 1001;
 const HOTKEY_ID_OVERLAY: i32 = 1002;
-
+const HOTKEY_ID_INSPECTOR: i32 = 1003;
 fn main() {
     // 1. Initialize COM
     unsafe {
@@ -51,11 +51,19 @@ fn main() {
         }
     };
 
+    let inspector = match CoreInspectorWindow::new(state.metrics.clone()) {
+        Ok(win) => win,
+        Err(e) => {
+            eprintln!("Failed to create Core Inspector: {}", e);
+            return;
+        }
+    };
+
     let ui_hwnds = Arc::new(RwLock::new(vec![
         dashboard.hwnd.0 as isize,
         hud.hwnd.0 as isize,
+        inspector.hwnd.0 as isize,
     ]));
-
     // 4. Spawn Background Monitoring Thread
     let monitor_handle = spawn_monitoring_thread(
         state.metrics.clone(),
@@ -79,6 +87,7 @@ fn main() {
     // 6. Register Global Hotkeys
     // Win + Shift + V => Toggle Dashboard
     // Ctrl + Shift + O => Toggle In-Game HUD Overlay
+    // Ctrl + Shift + C => Toggle CPU Core Inspector
     unsafe {
         let _ = RegisterHotKey(
             None,
@@ -91,6 +100,12 @@ fn main() {
             HOTKEY_ID_OVERLAY,
             MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT,
             0x4F, // 'O'
+        );
+        let _ = RegisterHotKey(
+            None,
+            HOTKEY_ID_INSPECTOR,
+            MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT,
+            0x43, // 'C'
         );
     }
 
@@ -111,6 +126,8 @@ fn main() {
                 } else if msg.wParam.0 == HOTKEY_ID_OVERLAY as usize {
                     hud.toggle_visibility();
                     tray_manager.set_hud_checked(hud.is_visible());
+                } else if msg.wParam.0 == HOTKEY_ID_INSPECTOR as usize {
+                    inspector.toggle_visibility();
                 }
             }
 
@@ -121,6 +138,7 @@ fn main() {
             let keep_running = tray_manager.handle_events(
                 &dashboard,
                 &hud,
+                &inspector,
                 state.config.clone(),
                 state.metrics.clone(),
                 state.is_running.clone(),
@@ -139,6 +157,7 @@ fn main() {
     unsafe {
         let _ = UnregisterHotKey(None, HOTKEY_ID_DASHBOARD);
         let _ = UnregisterHotKey(None, HOTKEY_ID_OVERLAY);
+        let _ = UnregisterHotKey(None, HOTKEY_ID_INSPECTOR);
     }
 
     ui_hwnds.write().clear();

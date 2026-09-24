@@ -1,4 +1,6 @@
+pub mod core_inspector;
 pub mod hud;
+pub use core_inspector::CoreInspectorWindow;
 pub use hud::FloatingHud;
 
 use std::ffi::c_void;
@@ -37,19 +39,19 @@ const WINDOW_CLASS_NAME: PCWSTR = w!("VeroStatDashboardClass");
 const WINDOW_TITLE: PCWSTR = w!("VeroStat");
 
 // Clean Minimal Theme Colors
-const COLOR_BG: COLORREF = COLORREF(0x00171515); // Neutral dark #151517 (0x00BBGGRR)
-const COLOR_TRACK: COLORREF = COLORREF(0x002B2727); // Dark track #27272B
-const COLOR_BORDER: COLORREF = COLORREF(0x002E2929); // Subtle divider #29292E
-const COLOR_TEXT_PRIMARY: COLORREF = COLORREF(0x00F8FAFC); // Crisp white #FCFAF8
-const COLOR_TEXT_LABEL: COLORREF = COLORREF(0x0094A3B8); // Slate label #94A3B8
-const COLOR_TEXT_DIM: COLORREF = COLORREF(0x0064748B); // Dim gray #64748B
-const COLOR_BAR_FILL: COLORREF = COLORREF(0x00F8BD38); // Calm sky blue #38BDF8
-const COLOR_BAR_WARN: COLORREF = COLORREF(0x004444EF); // Crimson red on extreme temp #EF4444
+pub(crate) const COLOR_BG: COLORREF = COLORREF(0x00171515); // Neutral dark #151517 (0x00BBGGRR)
+pub(crate) const COLOR_TRACK: COLORREF = COLORREF(0x002B2727); // Dark track #27272B
+pub(crate) const COLOR_BORDER: COLORREF = COLORREF(0x002E2929); // Subtle divider #29292E
+pub(crate) const COLOR_TEXT_PRIMARY: COLORREF = COLORREF(0x00F8FAFC); // Crisp white #FCFAF8
+pub(crate) const COLOR_TEXT_LABEL: COLORREF = COLORREF(0x0094A3B8); // Slate label #94A3B8
+pub(crate) const COLOR_TEXT_DIM: COLORREF = COLORREF(0x0064748B); // Dim gray #64748B
+pub(crate) const COLOR_BAR_FILL: COLORREF = COLORREF(0x00F8BD38); // Calm sky blue #38BDF8
+pub(crate) const COLOR_BAR_WARN: COLORREF = COLORREF(0x004444EF); // Crimson red on extreme temp #EF4444
 
 // Hardware Brand Colors (0x00BBGGRR)
-const COLOR_BRAND_INTEL: COLORREF = COLORREF(0x00E0A300); // Intel Electric Blue #00A3E0
-const COLOR_BRAND_AMD: COLORREF = COLORREF(0x00241CED);   // AMD Crimson Red #ED1C24
-const COLOR_BRAND_NVIDIA: COLORREF = COLORREF(0x0000B976); // NVIDIA GeForce Green #76B900
+pub(crate) const COLOR_BRAND_INTEL: COLORREF = COLORREF(0x00E0A300); // Intel Electric Blue #00A3E0
+pub(crate) const COLOR_BRAND_AMD: COLORREF = COLORREF(0x00241CED);   // AMD Crimson Red #ED1C24
+pub(crate) const COLOR_BRAND_NVIDIA: COLORREF = COLORREF(0x0000B976); // NVIDIA GeForce Green #76B900
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HardwareBrand {
@@ -230,7 +232,7 @@ impl DashboardWindow {
     }
 }
 
-fn create_font(height: i32, weight: i32) -> HFONT {
+pub(crate) fn create_font(height: i32, weight: i32) -> HFONT {
     let mut lf = LOGFONTW::default();
     lf.lfHeight = -height;
     lf.lfWeight = weight;
@@ -242,7 +244,7 @@ fn create_font(height: i32, weight: i32) -> HFONT {
 
 const EMBEDDED_ICON: &[u8] = include_bytes!("../../assets/icon.ico");
 
-fn get_embedded_app_icon() -> Option<HICON> {
+pub(crate) fn get_embedded_app_icon() -> Option<HICON> {
     unsafe {
         if EMBEDDED_ICON.len() > 22 {
             let res = CreateIconFromResourceEx(
@@ -261,7 +263,7 @@ fn get_embedded_app_icon() -> Option<HICON> {
     }
 }
 
-fn position_near_tray(hwnd: HWND) {
+pub(crate) fn position_near_tray(hwnd: HWND) {
     unsafe {
         let mut work_area = RECT::default();
         if SystemParametersInfoW(
@@ -404,8 +406,12 @@ unsafe fn render_dashboard(
         cpu_temp_str
     };
 
-    let cpu_short_name = shorten_name(&metrics.cpu_name, 18);
-
+    let cores_suffix = match (metrics.cpu_physical_cores, metrics.cpu_logical_cores) {
+        (Some(p), l) if l > 0 => format!(" ({}C/{}T)", p, l),
+        (None, l) if l > 0 => format!(" ({}T)", l),
+        _ => String::new(),
+    };
+    let cpu_short_name = format!("{}{}", shorten_name(&metrics.cpu_name, 12), cores_suffix);
     let cpu_brand = HardwareBrand::detect_cpu(&metrics.cpu_name);
     let cpu_brand_color = cpu_brand.color();
     let cpu_bar_color = if metrics.cpu_temperature.unwrap_or(0.0) >= 85.0 {
@@ -627,7 +633,7 @@ unsafe fn draw_stat_row(
     cur_y
 }
 
-unsafe fn draw_progress_bar(
+pub(crate) unsafe fn draw_progress_bar(
     hdc: HDC,
     x: i32,
     y: i32,
@@ -666,7 +672,7 @@ unsafe fn draw_progress_bar(
     }
 }
 
-unsafe fn draw_text_line(
+pub(crate) unsafe fn draw_text_line(
     hdc: HDC,
     x: i32,
     y: i32,
@@ -688,7 +694,7 @@ unsafe fn draw_text_line(
     );
 }
 
-unsafe fn draw_line(
+pub(crate) unsafe fn draw_line(
     hdc: HDC,
     x1: i32,
     y1: i32,
@@ -706,7 +712,7 @@ unsafe fn draw_line(
     let _ = DeleteObject(brush);
 }
 
-fn shorten_name(name: &str, max_len: usize) -> String {
+pub(crate) fn shorten_name(name: &str, max_len: usize) -> String {
     let trimmed = name
         .replace("11th Gen ", "")
         .replace("(R)", "")

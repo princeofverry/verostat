@@ -15,6 +15,14 @@ pub struct ProcessInfo {
     pub memory_bytes: u64,
 }
 
+/// Real-time metrics for an individual logical CPU core/thread
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CoreInfo {
+    pub id: usize,
+    pub usage: f32,          // percentage 0.0 - 100.0
+    pub frequency_mhz: u64,  // clock in MHz (e.g. 4200)
+}
+
 /// System metrics snapshot containing hardware and network data.
 #[derive(Debug, Clone)]
 pub struct SystemMetrics {
@@ -23,7 +31,9 @@ pub struct SystemMetrics {
     pub cpu_temperature: Option<f32>,
     pub cpu_frequency: Option<f32>, // in GHz
     pub cpu_name: String,
-
+    pub cpu_physical_cores: Option<usize>,
+    pub cpu_logical_cores: usize,
+    pub cpu_cores: Vec<CoreInfo>,
     // GPU
     pub gpu_usage: Option<f32>,
     pub gpu_temperature: Option<f32>,
@@ -59,7 +69,9 @@ impl Default for SystemMetrics {
             cpu_temperature: None,
             cpu_frequency: None,
             cpu_name: String::from("Detecting CPU..."),
-
+            cpu_physical_cores: None,
+            cpu_logical_cores: 0,
+            cpu_cores: Vec::new(),
             gpu_usage: None,
             gpu_temperature: None,
             gpu_memory_used: None,

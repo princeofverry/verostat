@@ -1,10 +1,14 @@
 use sysinfo::System;
+use crate::app::CoreInfo;
 
 #[derive(Debug, Clone)]
 pub struct CpuData {
     pub usage: f32,
     pub model: String,
     pub frequency_ghz: Option<f32>,
+    pub physical_cores: Option<usize>,
+    pub logical_cores: usize,
+    pub cores: Vec<CoreInfo>,
 }
 
 pub struct CpuMonitor {
@@ -47,10 +51,24 @@ impl CpuMonitor {
             None
         };
 
+        let logical_cores = cpus.len();
+        let physical_cores = sys.physical_core_count();
+        let mut cores = Vec::with_capacity(logical_cores);
+        for (i, c) in cpus.iter().enumerate() {
+            cores.push(CoreInfo {
+                id: i,
+                usage: c.cpu_usage(),
+                frequency_mhz: c.frequency(),
+            });
+        }
+
         CpuData {
             usage,
             model,
             frequency_ghz,
+            physical_cores,
+            logical_cores,
+            cores,
         }
     }
 }

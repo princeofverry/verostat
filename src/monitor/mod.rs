@@ -118,7 +118,9 @@ impl MonitorCoordinator {
             cpu_temperature: cpu_temp,
             cpu_frequency: cpu_data.frequency_ghz,
             cpu_name: cpu_data.model,
-
+            cpu_physical_cores: cpu_data.physical_cores,
+            cpu_logical_cores: cpu_data.logical_cores,
+            cpu_cores: cpu_data.cores,
             gpu_usage: gpu_data.as_ref().and_then(|g| g.usage),
             gpu_temperature: gpu_data.as_ref().and_then(|g| g.temperature),
             gpu_memory_used: gpu_data.as_ref().and_then(|g| g.memory_used),
