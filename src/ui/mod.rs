@@ -46,6 +46,53 @@ const COLOR_TEXT_DIM: COLORREF = COLORREF(0x0064748B); // Dim gray #64748B
 const COLOR_BAR_FILL: COLORREF = COLORREF(0x00F8BD38); // Calm sky blue #38BDF8
 const COLOR_BAR_WARN: COLORREF = COLORREF(0x004444EF); // Crimson red on extreme temp #EF4444
 
+// Hardware Brand Colors (0x00BBGGRR)
+const COLOR_BRAND_INTEL: COLORREF = COLORREF(0x00E0A300); // Intel Electric Blue #00A3E0
+const COLOR_BRAND_AMD: COLORREF = COLORREF(0x00241CED);   // AMD Crimson Red #ED1C24
+const COLOR_BRAND_NVIDIA: COLORREF = COLORREF(0x0000B976); // NVIDIA GeForce Green #76B900
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HardwareBrand {
+    Intel,
+    Amd,
+    Nvidia,
+    Unknown,
+}
+
+impl HardwareBrand {
+    pub fn detect_cpu(name: &str) -> Self {
+        let lower = name.to_lowercase();
+        if lower.contains("amd") || lower.contains("ryzen") || lower.contains("threadripper") || lower.contains("epyc") {
+            HardwareBrand::Amd
+        } else if lower.contains("intel") || lower.contains("core(tm)") || lower.contains("xeon") || lower.contains("celeron") || lower.contains("pentium") {
+            HardwareBrand::Intel
+        } else {
+            HardwareBrand::Unknown
+        }
+    }
+
+    pub fn detect_gpu(name: &str) -> Self {
+        let lower = name.to_lowercase();
+        if lower.contains("nvidia") || lower.contains("geforce") || lower.contains("rtx") || lower.contains("gtx") || lower.contains("quadro") || lower.contains("tesla") {
+            HardwareBrand::Nvidia
+        } else if lower.contains("amd") || lower.contains("radeon") {
+            HardwareBrand::Amd
+        } else if lower.contains("intel") || lower.contains("arc(tm)") || lower.contains("iris") || lower.contains("uhd graphics") || lower.contains("hd graphics") {
+            HardwareBrand::Intel
+        } else {
+            HardwareBrand::Unknown
+        }
+    }
+
+    pub fn color(&self) -> Option<COLORREF> {
+        match self {
+            HardwareBrand::Intel => Some(COLOR_BRAND_INTEL),
+            HardwareBrand::Amd => Some(COLOR_BRAND_AMD),
+            HardwareBrand::Nvidia => Some(COLOR_BRAND_NVIDIA),
+            HardwareBrand::Unknown => None,
+        }
+    }
+}
 struct DashboardContext {
     metrics: Arc<RwLock<SystemMetrics>>,
     is_running: Arc<AtomicBool>,
@@ -359,6 +406,14 @@ unsafe fn render_dashboard(
 
     let cpu_short_name = shorten_name(&metrics.cpu_name, 18);
 
+    let cpu_brand = HardwareBrand::detect_cpu(&metrics.cpu_name);
+    let cpu_brand_color = cpu_brand.color();
+    let cpu_bar_color = if metrics.cpu_temperature.unwrap_or(0.0) >= 85.0 {
+        COLOR_BAR_WARN
+    } else {
+        cpu_brand_color.unwrap_or(COLOR_BAR_FILL)
+    };
+
     y = draw_stat_row(
         hdc,
         pad_x,
@@ -369,7 +424,8 @@ unsafe fn render_dashboard(
         &format!("{:.0}%", cpu_usage),
         &cpu_right_str,
         cpu_usage / 100.0,
-        if metrics.cpu_temperature.unwrap_or(0.0) >= 85.0 { COLOR_BAR_WARN } else { COLOR_BAR_FILL },
+        cpu_bar_color,
+        cpu_brand_color,
         ctx,
     );
 
@@ -403,6 +459,14 @@ unsafe fn render_dashboard(
     let gpu_short_name = shorten_name(metrics.gpu_name.as_deref().unwrap_or("GPU"), 18);
     let gpu_fill = metrics.gpu_usage.unwrap_or(0.0) / 100.0;
 
+    let gpu_brand = HardwareBrand::detect_gpu(metrics.gpu_name.as_deref().unwrap_or(""));
+    let gpu_brand_color = gpu_brand.color();
+    let gpu_bar_color = if metrics.gpu_temperature.unwrap_or(0.0) >= 85.0 {
+        COLOR_BAR_WARN
+    } else {
+        gpu_brand_color.unwrap_or(COLOR_BAR_FILL)
+    };
+
     y = draw_stat_row(
         hdc,
         pad_x,
@@ -413,7 +477,8 @@ unsafe fn render_dashboard(
         &gpu_usage_str,
         &gpu_right_str,
         gpu_fill,
-        if metrics.gpu_temperature.unwrap_or(0.0) >= 85.0 { COLOR_BAR_WARN } else { COLOR_BAR_FILL },
+        gpu_bar_color,
+        gpu_brand_color,
         ctx,
     );
 
@@ -436,6 +501,7 @@ unsafe fn render_dashboard(
         &ram_pct_str,
         metrics.ram_usage / 100.0,
         COLOR_BAR_FILL,
+        None,
         ctx,
     );
 
@@ -458,6 +524,7 @@ unsafe fn render_dashboard(
         &disk_pct_str,
         metrics.disk_usage / 100.0,
         COLOR_BAR_FILL,
+        None,
         ctx,
     );
 
@@ -532,13 +599,13 @@ unsafe fn draw_stat_row(
     val_right: &str,
     fill_ratio: f32,
     fill_color: COLORREF,
+    label_color: Option<COLORREF>,
     ctx: &DashboardContext,
 ) -> i32 {
     // Top line: Label ("CPU") on left, sub_label ("i5-11400H") on right
     SelectObject(hdc, ctx.font_label);
-    SetTextColor(hdc, COLOR_TEXT_LABEL);
+    SetTextColor(hdc, label_color.unwrap_or(COLOR_TEXT_LABEL));
     draw_text_line(hdc, x, y, label, DT_LEFT);
-
     SetTextColor(hdc, COLOR_TEXT_DIM);
     draw_text_line(hdc, x + w, y, sub_label, DT_RIGHT);
     let mut cur_y = y + 15;
@@ -581,12 +648,16 @@ unsafe fn draw_progress_bar(
     FillRect(hdc, &track_rect, track_brush);
     let _ = DeleteObject(track_brush);
 
-    let fill_w = (w as f32 * clamped_ratio).round() as i32;
+    let fill_w = if clamped_ratio > 0.0 {
+        ((w as f32 * clamped_ratio).round() as i32).max(2)
+    } else {
+        0
+    };
     if fill_w > 0 {
         let fill_rect = RECT {
             left: x,
             top: y,
-            right: x + fill_w,
+            right: x + fill_w.min(w),
             bottom: y + h,
         };
         let fill_brush = CreateSolidBrush(accent);
@@ -650,5 +721,70 @@ fn shorten_name(name: &str, max_len: usize) -> String {
         format!("{}…", short)
     } else {
         trimmed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cpu_brand_detection() {
+        assert_eq!(
+            HardwareBrand::detect_cpu("11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz"),
+            HardwareBrand::Intel
+        );
+        assert_eq!(
+            HardwareBrand::detect_cpu("Intel(R) Core(TM) i7-13700K"),
+            HardwareBrand::Intel
+        );
+        assert_eq!(
+            HardwareBrand::detect_cpu("AMD Ryzen 7 5800X 8-Core Processor"),
+            HardwareBrand::Amd
+        );
+        assert_eq!(
+            HardwareBrand::detect_cpu("AMD Ryzen 9 7950X3D"),
+            HardwareBrand::Amd
+        );
+        assert_eq!(
+            HardwareBrand::detect_cpu("Unknown Processor"),
+            HardwareBrand::Unknown
+        );
+    }
+
+    #[test]
+    fn test_gpu_brand_detection() {
+        assert_eq!(
+            HardwareBrand::detect_gpu("NVIDIA GeForce RTX 3050 Laptop GPU"),
+            HardwareBrand::Nvidia
+        );
+        assert_eq!(
+            HardwareBrand::detect_gpu("GeForce RTX 4090"),
+            HardwareBrand::Nvidia
+        );
+        assert_eq!(
+            HardwareBrand::detect_gpu("NVIDIA GeForce GTX 1660 Ti"),
+            HardwareBrand::Nvidia
+        );
+        assert_eq!(
+            HardwareBrand::detect_gpu("AMD Radeon RX 6700 XT"),
+            HardwareBrand::Amd
+        );
+        assert_eq!(
+            HardwareBrand::detect_gpu("Intel(R) Arc(TM) A770 Graphics"),
+            HardwareBrand::Intel
+        );
+        assert_eq!(
+            HardwareBrand::detect_gpu("Microsoft Basic Display Adapter"),
+            HardwareBrand::Unknown
+        );
+    }
+
+    #[test]
+    fn test_brand_colors() {
+        assert_eq!(HardwareBrand::Intel.color(), Some(COLOR_BRAND_INTEL));
+        assert_eq!(HardwareBrand::Amd.color(), Some(COLOR_BRAND_AMD));
+        assert_eq!(HardwareBrand::Nvidia.color(), Some(COLOR_BRAND_NVIDIA));
+        assert_eq!(HardwareBrand::Unknown.color(), None);
     }
 }

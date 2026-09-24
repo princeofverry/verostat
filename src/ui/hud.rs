@@ -2,22 +2,24 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontIndirectW,
-    CreateSolidBrush, DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, LOGFONTW,
-    SelectObject, SetBkMode, SetTextColor, DT_CENTER, DT_NOCLIP, DT_SINGLELINE, DT_VCENTER,
-    HDC, HFONT, PAINTSTRUCT, SRCCOPY, TRANSPARENT,
+    CreateSolidBrush, DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect,
+    GetDC, GetTextExtentPoint32W, ReleaseDC, SelectObject, SetBkMode, SetTextColor,
+    DT_CENTER, DT_SINGLELINE, DT_VCENTER, HDC, HFONT, LOGFONTW, PAINTSTRUCT,
+    SRCCOPY, TRANSPARENT,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetClientRect, GetSystemMetrics, IsWindowVisible,
-    RegisterClassExW, SendMessageW, SetForegroundWindow, SetLayeredWindowAttributes,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, GWLP_USERDATA, HCURSOR, HTCAPTION,
-    HWND_TOPMOST, LWA_ALPHA, SM_CXSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
-    SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, GetClientRect, GetSystemMetrics, GetWindowRect,
+    IsWindowVisible, RegisterClassExW, SendMessageW, SetForegroundWindow,
+    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    GWLP_USERDATA, HCURSOR, HTCAPTION, HWND_TOPMOST, LWA_ALPHA, SM_CXSCREEN,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW,
+    WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_NCLBUTTONDOWN,
+    WM_PAINT, WM_RBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::app::{AppConfig, SystemMetrics};
@@ -71,8 +73,18 @@ impl FloatingHud {
             wc.hCursor = HCURSOR::default();
 
             let _ = RegisterClassExW(&wc);
+            let font = create_font(13, 600);
 
-            let initial_width = 310;
+            let screen_dc = GetDC(HWND(std::ptr::null_mut()));
+            let initial_text = build_hud_text(&metrics.read(), &config.read());
+            let initial_width = if !screen_dc.is_invalid() {
+                let w = calculate_hud_width(screen_dc, font, &initial_text);
+                let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
+                w
+            } else {
+                380
+            };
+
             let screen_w = GetSystemMetrics(SM_CXSCREEN);
             let start_x = (screen_w - initial_width) / 2;
             let start_y = 12;
@@ -96,7 +108,6 @@ impl FloatingHud {
             // 90% opacity
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 230, LWA_ALPHA);
 
-            let font = create_font(13, 600);
             let context = Box::new(HudContext {
                 metrics,
                 config,
@@ -123,12 +134,16 @@ impl FloatingHud {
             if IsWindowVisible(self.hwnd).as_bool() {
                 let _ = ShowWindow(self.hwnd, SW_HIDE);
             } else {
+                let ptr = windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(self.hwnd, GWLP_USERDATA);
+                if ptr != 0 {
+                    let ctx = &*(ptr as *const HudContext);
+                    adjust_hud_size_if_needed(self.hwnd, ctx);
+                }
                 let _ = ShowWindow(self.hwnd, SW_SHOW);
                 let _ = SetForegroundWindow(self.hwnd);
             }
         }
     }
-
     pub fn is_visible(&self) -> bool {
         unsafe { IsWindowVisible(self.hwnd).as_bool() }
     }
@@ -198,6 +213,7 @@ unsafe extern "system" fn hud_window_proc(
         WM_ERASEBKGND => LRESULT(1),
         WM_METRICS_UPDATED => {
             if IsWindowVisible(hwnd).as_bool() {
+                adjust_hud_size_if_needed(hwnd, ctx);
                 let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, false);
             }
             LRESULT(0)
@@ -210,39 +226,7 @@ unsafe extern "system" fn hud_window_proc(
     }
 }
 
-unsafe fn render_hud(
-    hwnd: HWND,
-    hdc: HDC,
-    width: i32,
-    height: i32,
-    ctx: &HudContext,
-) {
-    let bg_brush = CreateSolidBrush(COLOR_HUD_BG);
-    let full_rect = RECT {
-        left: 0,
-        top: 0,
-        right: width,
-        bottom: height,
-    };
-    FillRect(hdc, &full_rect, bg_brush);
-    let _ = DeleteObject(bg_brush);
-
-    let border_rect = RECT {
-        left: 0,
-        top: 0,
-        right: width,
-        bottom: 1,
-    };
-    let border_brush = CreateSolidBrush(COLOR_HUD_BORDER);
-    FillRect(hdc, &border_rect, border_brush);
-    let _ = DeleteObject(border_brush);
-
-    SetBkMode(hdc, TRANSPARENT);
-    SelectObject(hdc, ctx.font);
-
-    let m = ctx.metrics.read().clone();
-    let cfg = ctx.config.read().clone();
-
+pub fn build_hud_text(m: &SystemMetrics, cfg: &AppConfig) -> String {
     let mut segments = Vec::new();
 
     if cfg.hud_show_cpu {
@@ -267,17 +251,100 @@ unsafe fn render_hud(
         segments.push(format!("↓{}", dl_str));
     }
 
-    let hud_text = if !segments.is_empty() {
+    if !segments.is_empty() {
         segments.join("   |   ")
     } else {
         "VeroStat HUD (Select elements in tray)".to_string()
+    }
+}
+
+unsafe fn calculate_hud_width(hdc: HDC, font: HFONT, text: &str) -> i32 {
+    let old_font = SelectObject(hdc, font);
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    let mut text_size = SIZE::default();
+    let _ = GetTextExtentPoint32W(hdc, &wide, &mut text_size);
+    SelectObject(hdc, old_font);
+
+    // Provide generous horizontal padding (20px left, 20px right = 40px)
+    // and round up to a multiple of 16 to avoid resizing jitter on small digit changes
+    let min_width = text_size.cx + 40;
+    let aligned_width = ((min_width + 15) / 16) * 16;
+    aligned_width.max(220)
+}
+
+unsafe fn adjust_hud_size_if_needed(hwnd: HWND, ctx: &HudContext) {
+    let m = ctx.metrics.read().clone();
+    let cfg = ctx.config.read().clone();
+    let text = build_hud_text(&m, &cfg);
+
+    let hdc = GetDC(hwnd);
+    if hdc.is_invalid() {
+        return;
+    }
+    let desired_width = calculate_hud_width(hdc, ctx.font, &text);
+    let _ = ReleaseDC(hwnd, hdc);
+
+    let mut rect = RECT::default();
+    let _ = GetWindowRect(hwnd, &mut rect);
+    let current_width = rect.right - rect.left;
+
+    // Expand immediately if current width is too small to avoid clipping.
+    // Shrink only if current width is notably larger (> 24px) to avoid jitter.
+    if current_width < desired_width || (current_width - desired_width) > 24 {
+        let screen_w = GetSystemMetrics(SM_CXSCREEN);
+        let mut cur_x = rect.left;
+        let cur_y = rect.top;
+
+        // Ensure window stays completely on-screen when expanding
+        if cur_x + desired_width > screen_w {
+            cur_x = (screen_w - desired_width).max(0);
+        }
+
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            cur_x,
+            cur_y,
+            desired_width,
+            HUD_HEIGHT,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        );
+    }
+}
+
+unsafe fn render_hud(
+    hwnd: HWND,
+    hdc: HDC,
+    width: i32,
+    height: i32,
+    ctx: &HudContext,
+) {
+    let bg_brush = CreateSolidBrush(COLOR_HUD_BG);
+    let full_rect = RECT {
+        left: 0,
+        top: 0,
+        right: width,
+        bottom: height,
     };
+    FillRect(hdc, &full_rect, bg_brush);
+    let _ = DeleteObject(bg_brush);
 
-    // Calculate desired dynamic width based on number of active segments
-    let count = segments.len().max(1) as i32;
-    let desired_width = (count * 98) + 24;
+    let border_brush = CreateSolidBrush(COLOR_HUD_BORDER);
+    let _ = FrameRect(hdc, &full_rect, border_brush);
+    let _ = DeleteObject(border_brush);
 
-    if (desired_width - width).abs() > 8 {
+    SetBkMode(hdc, TRANSPARENT);
+    SelectObject(hdc, ctx.font);
+
+    let m = ctx.metrics.read().clone();
+    let cfg = ctx.config.read().clone();
+
+    let hud_text = build_hud_text(&m, &cfg);
+
+    // Safety fallback: if for any reason current width is smaller than needed,
+    // adjust window size so clipping is never persistent
+    let desired_width = calculate_hud_width(hdc, ctx.font, &hud_text);
+    if width < desired_width {
         let _ = SetWindowPos(
             hwnd,
             HWND_TOPMOST,
@@ -310,6 +377,43 @@ unsafe fn render_hud(
         hdc,
         &mut wide,
         &mut text_rect,
-        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_hud_text_all_enabled() {
+        let mut m = SystemMetrics::default();
+        m.cpu_usage = Some(18.0);
+        m.cpu_temperature = Some(50.0);
+        m.gpu_usage = Some(0.0);
+        m.gpu_temperature = Some(51.0);
+        m.ram_used = (14.6 * 1024.0 * 1024.0 * 1024.0) as u64;
+        m.download_speed = 1024;
+
+        let mut cfg = AppConfig::default();
+        cfg.hud_show_network = true;
+        let text = build_hud_text(&m, &cfg);
+        assert!(text.contains("CPU 18% 50°C"));
+        assert!(text.contains("GPU 0% 51°C"));
+        assert!(text.contains("RAM 14.6G"));
+        assert!(text.contains("↓1 KB/s"));
+    }
+
+    #[test]
+    fn test_build_hud_text_empty_fallback() {
+        let m = SystemMetrics::default();
+        let mut cfg = AppConfig::default();
+        cfg.hud_show_cpu = false;
+        cfg.hud_show_gpu = false;
+        cfg.hud_show_ram = false;
+        cfg.hud_show_network = false;
+
+        let text = build_hud_text(&m, &cfg);
+        assert_eq!(text, "VeroStat HUD (Select elements in tray)");
+    }
 }
