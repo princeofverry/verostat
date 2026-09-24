@@ -29,6 +29,7 @@ impl Default for TrayDisplayMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppConfig {
     /// Refresh interval in milliseconds (default 1000)
     pub refresh_interval_ms: u64,
@@ -48,6 +49,8 @@ pub struct AppConfig {
     pub hud_show_ram: bool,
     /// Floating HUD: Show Network stats (default false)
     pub hud_show_network: bool,
+    /// Floating HUD: Opacity percentage 10..=100 (default 90)
+    pub hud_opacity: u8,
 }
 
 impl Default for AppConfig {
@@ -62,6 +65,7 @@ impl Default for AppConfig {
             hud_show_gpu: true,
             hud_show_ram: true,
             hud_show_network: false,
+            hud_opacity: 90,
         }
     }
 }
@@ -198,5 +202,42 @@ pub fn set_autostart(enable: bool) -> Result<(), String> {
 
         let _ = RegCloseKey(hkey);
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config_includes_opacity() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.hud_opacity, 90);
+    }
+
+    #[test]
+    fn test_config_backward_compatibility_without_opacity() {
+        let toml_str = r#"
+            refresh_interval_ms = 1000
+            start_with_windows = false
+            high_temp_threshold = 85.0
+            show_disk_stats = true
+            tray_display_mode = "cpu_usage"
+            hud_show_cpu = true
+            hud_show_gpu = true
+            hud_show_ram = true
+            hud_show_network = false
+        "#;
+        let parsed: AppConfig = toml::from_str(toml_str).expect("Failed to parse TOML without hud_opacity");
+        assert_eq!(parsed.hud_opacity, 90);
+    }
+
+    #[test]
+    fn test_config_with_custom_opacity() {
+        let toml_str = r#"
+            hud_opacity = 75
+        "#;
+        let parsed: AppConfig = toml::from_str(toml_str).expect("Failed to parse TOML with custom hud_opacity");
+        assert_eq!(parsed.hud_opacity, 75);
     }
 }

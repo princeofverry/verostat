@@ -28,6 +28,11 @@ pub struct TrayManager {
     hud_elem_gpu: CheckMenuItem,
     hud_elem_ram: CheckMenuItem,
     hud_elem_net: CheckMenuItem,
+    hud_opacity_100: CheckMenuItem,
+    hud_opacity_90: CheckMenuItem,
+    hud_opacity_75: CheckMenuItem,
+    hud_opacity_50: CheckMenuItem,
+    hud_opacity_25: CheckMenuItem,
     benchmark_item: MenuItem,
     display_cpu_usage: CheckMenuItem,
     display_cpu_temp: CheckMenuItem,
@@ -66,12 +71,26 @@ impl TrayManager {
         hud_elements_submenu.append(&hud_elem_ram).map_err(|e| e.to_string())?;
         hud_elements_submenu.append(&hud_elem_net).map_err(|e| e.to_string())?;
 
+        // Submenu: HUD Opacity / Transparency selection
+        let cur_opacity = cfg_read.hud_opacity;
+        let hud_opacity_submenu = Submenu::new("HUD Opacity", true);
+        let hud_opacity_100 = CheckMenuItem::new("100% (Solid)", true, cur_opacity == 100, None);
+        let hud_opacity_90 = CheckMenuItem::new("90% (Default)", true, cur_opacity == 90, None);
+        let hud_opacity_75 = CheckMenuItem::new("75%", true, cur_opacity == 75, None);
+        let hud_opacity_50 = CheckMenuItem::new("50%", true, cur_opacity == 50, None);
+        let hud_opacity_25 = CheckMenuItem::new("25% (Ghost)", true, cur_opacity == 25, None);
+
+        hud_opacity_submenu.append(&hud_opacity_100).map_err(|e| e.to_string())?;
+        hud_opacity_submenu.append(&hud_opacity_90).map_err(|e| e.to_string())?;
+        hud_opacity_submenu.append(&hud_opacity_75).map_err(|e| e.to_string())?;
+        hud_opacity_submenu.append(&hud_opacity_50).map_err(|e| e.to_string())?;
+        hud_opacity_submenu.append(&hud_opacity_25).map_err(|e| e.to_string())?;
+
         let benchmark_item = MenuItem::new("▶ Start Benchmark Log", true, None);
 
         // Submenu: Tray Icon Display mode selection
         let current_mode = cfg_read.tray_display_mode;
         drop(cfg_read);
-
         let display_submenu = Submenu::new("Tray Icon Display", true);
 
         let display_cpu_usage = CheckMenuItem::new(
@@ -139,6 +158,7 @@ impl TrayManager {
         menu.append(&refresh_item).map_err(|e| e.to_string())?;
         menu.append(&hud_item).map_err(|e| e.to_string())?;
         menu.append(&hud_elements_submenu).map_err(|e| e.to_string())?;
+        menu.append(&hud_opacity_submenu).map_err(|e| e.to_string())?;
         menu.append(&benchmark_item).map_err(|e| e.to_string())?;
         menu.append(&display_submenu).map_err(|e| e.to_string())?;
         menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
@@ -168,6 +188,11 @@ impl TrayManager {
             hud_elem_gpu,
             hud_elem_ram,
             hud_elem_net,
+            hud_opacity_100,
+            hud_opacity_90,
+            hud_opacity_75,
+            hud_opacity_50,
+            hud_opacity_25,
             benchmark_item,
             display_cpu_usage,
             display_cpu_temp,
@@ -252,6 +277,16 @@ impl TrayManager {
                 config.write().hud_show_network = checked;
                 let _ = config.read().save();
                 unsafe { let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hud.hwnd, None, false); }
+            } else if event.id == self.hud_opacity_100.id() {
+                self.set_hud_opacity(100, &config, hud);
+            } else if event.id == self.hud_opacity_90.id() {
+                self.set_hud_opacity(90, &config, hud);
+            } else if event.id == self.hud_opacity_75.id() {
+                self.set_hud_opacity(75, &config, hud);
+            } else if event.id == self.hud_opacity_50.id() {
+                self.set_hud_opacity(50, &config, hud);
+            } else if event.id == self.hud_opacity_25.id() {
+                self.set_hud_opacity(25, &config, hud);
             } else if event.id == self.benchmark_item.id() {
                 toggle_benchmark_session(&self.benchmark_item, &benchmark_session);
             } else if event.id == self.display_cpu_usage.id() {
@@ -359,6 +394,20 @@ impl TrayManager {
         }
 
         self.last_icon_key = (mode, 9999);
+    }
+
+    fn set_hud_opacity(&mut self, pct: u8, config: &Arc<RwLock<AppConfig>>, hud: &FloatingHud) {
+        self.hud_opacity_100.set_checked(pct == 100);
+        self.hud_opacity_90.set_checked(pct == 90);
+        self.hud_opacity_75.set_checked(pct == 75);
+        self.hud_opacity_50.set_checked(pct == 50);
+        self.hud_opacity_25.set_checked(pct == 25);
+
+        hud.set_opacity(pct);
+
+        let mut cfg = config.write();
+        cfg.hud_opacity = pct;
+        let _ = cfg.save();
     }
 }
 
@@ -520,7 +569,7 @@ fn show_settings_dialog(config: &Arc<RwLock<AppConfig>>) {
     let msg = format!(
         "VeroStat Settings\n\n\
         • Tray Icon Display: {}\n\
-        • In-Game HUD: CPU {}, GPU {}, RAM {}, Net {}\n\
+        • In-Game HUD: CPU {}, GPU {}, RAM {}, Net {} (Opacity: {}%)\n\
         • Refresh Interval: {} ms\n\
         • Start with Windows: {}\n\
         • High Temp Warning: {:.0}°C\n\
@@ -535,6 +584,7 @@ fn show_settings_dialog(config: &Arc<RwLock<AppConfig>>) {
         if cfg.hud_show_gpu { "ON" } else { "OFF" },
         if cfg.hud_show_ram { "ON" } else { "OFF" },
         if cfg.hud_show_network { "ON" } else { "OFF" },
+        cfg.hud_opacity,
         cfg.refresh_interval_ms,
         if cfg.start_with_windows { "Enabled" } else { "Disabled" },
         cfg.high_temp_threshold,

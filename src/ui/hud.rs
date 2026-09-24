@@ -105,9 +105,9 @@ impl FloatingHud {
             )
             .map_err(|e| format!("Failed to create HUD window: {:?}", e))?;
 
-            // 90% opacity
-            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 230, LWA_ALPHA);
-
+            let opacity_pct = config.read().hud_opacity.clamp(10, 100);
+            let alpha = ((opacity_pct as f32 / 100.0) * 255.0).round() as u8;
+            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), alpha, LWA_ALPHA);
             let context = Box::new(HudContext {
                 metrics,
                 config,
@@ -146,6 +146,14 @@ impl FloatingHud {
     }
     pub fn is_visible(&self) -> bool {
         unsafe { IsWindowVisible(self.hwnd).as_bool() }
+    }
+
+    pub fn set_opacity(&self, opacity_pct: u8) {
+        let clamped = opacity_pct.clamp(10, 100);
+        let alpha = ((clamped as f32 / 100.0) * 255.0).round() as u8;
+        unsafe {
+            let _ = SetLayeredWindowAttributes(self.hwnd, COLORREF(0), alpha, LWA_ALPHA);
+        }
     }
 }
 
