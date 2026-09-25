@@ -137,9 +137,8 @@ impl MonitorCoordinator {
             disk_used,
             disk_total,
             disk_usage,
-
             top_processes,
-
+            uptime_secs: System::uptime(),
             updated_at: Instant::now(),
         }
     }
@@ -200,11 +199,14 @@ pub fn spawn_monitoring_thread(
                 session.sum_cpu_usage += cpu_u as f64;
                 session.sum_gpu_usage += gpu_u as f64;
 
+                let cpu_t_str = snapshot.cpu_temperature.map(|t| format!("{:.1}", t)).unwrap_or_default();
+                let gpu_t_str = snapshot.gpu_temperature.map(|t| format!("{:.1}", t)).unwrap_or_default();
+
                 let elapsed_secs = session.start_time.elapsed().as_secs();
                 let _ = writeln!(
                     session.file,
-                    "{},{:.1},{:.1},{:.1},{:.1},{:.1},{},{},{}",
-                    elapsed_secs, cpu_u, cpu_t, gpu_u, gpu_t, ram_u, ram_mb, dl_kb, ul_kb
+                    "{},{:.1},{},{:.1},{},{:.1},{},{},{}",
+                    elapsed_secs, cpu_u, cpu_t_str, gpu_u, gpu_t_str, ram_u, ram_mb, dl_kb, ul_kb
                 );
             }
 

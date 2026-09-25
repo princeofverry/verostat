@@ -14,35 +14,36 @@ const DIGITS_5X7: [[u8; 7]; 10] = [
     [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100], // 9
 ];
 
-/// Generates a 32x32 RGBA system tray icon displaying a 2-digit number (0-99).
-pub fn generate_stat_icon(value: u32, is_temp: bool) -> Result<Icon, String> {
+/// Generates a 32x32 RGBA system tray icon displaying a 2-digit number (0-99),
+/// or "--" when value is None (e.g. sensor unavailable).
+pub fn generate_stat_icon(value: Option<u32>, is_temp: bool) -> Result<Icon, String> {
     let width = 32u32;
     let height = 32u32;
     let mut rgba = vec![0u8; (width * height * 4) as usize];
 
-    let clamped = value.min(99);
-    let d1 = (clamped / 10) as usize;
-    let d2 = (clamped % 10) as usize;
-
     // Color logic
-    let (fg_r, fg_g, fg_b) = if is_temp {
-        if clamped >= 80 {
-            (239, 68, 68) // Crimson Red #EF4444
-        } else if clamped >= 65 {
-            (245, 158, 11) // Amber #F59E0B
+    let (fg_r, fg_g, fg_b) = if let Some(val) = value {
+        let clamped = val.min(99);
+        if is_temp {
+            if clamped >= 80 {
+                (239, 68, 68) // Crimson Red #EF4444
+            } else if clamped >= 65 {
+                (245, 158, 11) // Amber #F59E0B
+            } else {
+                (56, 189, 248) // Sky Blue #38BDF8
+            }
         } else {
-            (56, 189, 248) // Sky Blue #38BDF8
+            if clamped >= 85 {
+                (239, 68, 68) // Crimson Red #EF4444
+            } else if clamped >= 70 {
+                (245, 158, 11) // Amber #F59E0B
+            } else {
+                (56, 189, 248) // Sky Blue #38BDF8
+            }
         }
     } else {
-        if clamped >= 85 {
-            (239, 68, 68) // Crimson Red #EF4444
-        } else if clamped >= 70 {
-            (245, 158, 11) // Amber #F59E0B
-        } else {
-            (56, 189, 248) // Sky Blue #38BDF8
-        }
+        (148, 163, 184) // Slate 400 neutral fallback for unavailable sensor
     };
-
     // Draw background rounded pill
     for y in 0..height {
         for x in 0..width {
@@ -68,9 +69,17 @@ pub fn generate_stat_icon(value: u32, is_temp: bool) -> Result<Icon, String> {
         }
     }
 
-    // Draw two 5x7 digits scaled 2x (10x14 pixels each)
-    draw_digit(&mut rgba, width, 5, 9, d1, fg_r, fg_g, fg_b);
-    draw_digit(&mut rgba, width, 17, 9, d2, fg_r, fg_g, fg_b);
+    // Draw either two digits or two dashes for None
+    if let Some(val) = value {
+        let clamped = val.min(99);
+        let d1 = (clamped / 10) as usize;
+        let d2 = (clamped % 10) as usize;
+        draw_digit(&mut rgba, width, 5, 9, d1, fg_r, fg_g, fg_b);
+        draw_digit(&mut rgba, width, 17, 9, d2, fg_r, fg_g, fg_b);
+    } else {
+        draw_dash(&mut rgba, width, 5, 9, fg_r, fg_g, fg_b);
+        draw_dash(&mut rgba, width, 17, 9, fg_r, fg_g, fg_b);
+    }
 
     Icon::from_rgba(rgba, width, height).map_err(|e| format!("Failed to create icon: {:?}", e))
 }
@@ -159,5 +168,57 @@ fn draw_digit(
                 }
             }
         }
+    }
+}
+
+fn draw_dash(
+    rgba: &mut [u8],
+    canvas_w: u32,
+    offset_x: u32,
+    offset_y: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+) {
+    // Row 3 (middle of 0..7) is the horizontal bar of a 5x7 character
+    let row_idx = 3;
+    for col_idx in 0..5 {
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let px = offset_x + (col_idx * 2) + dx;
+                let py = offset_y + (row_idx as u32 * 2) + dy;
+
+                let idx = ((py * canvas_w + px) * 4) as usize;
+                if idx + 3 < rgba.len() {
+                    rgba[idx] = r;
+                    rgba[idx + 1] = g;
+                    rgba[idx + 2] = b;
+                    rgba[idx + 3] = 255;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_stat_icon_with_value() {
+        let icon = generate_stat_icon(Some(45), false);
+        assert!(icon.is_ok());
+    }
+
+    #[test]
+    fn test_generate_stat_icon_with_none() {
+        let icon = generate_stat_icon(None, true);
+        assert!(icon.is_ok());
+    }
+
+    #[test]
+    fn test_generate_logo_icon() {
+        let icon = generate_logo_icon();
+        assert!(icon.is_ok());
     }
 }

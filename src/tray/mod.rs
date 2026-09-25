@@ -47,7 +47,7 @@ pub struct TrayManager {
     about_id: MenuId,
     exit_id: MenuId,
     last_tooltip: String,
-    last_icon_key: (TrayDisplayMode, u32),
+    last_icon_key: (TrayDisplayMode, Option<u32>),
     last_toggle_time: Instant,
 }
 
@@ -216,7 +216,7 @@ impl TrayManager {
             about_id,
             exit_id,
             last_tooltip: String::new(),
-            last_icon_key: (current_mode, 999),
+            last_icon_key: (current_mode, Some(999)),
             last_toggle_time: Instant::now(),
         })
     }
@@ -375,12 +375,12 @@ impl TrayManager {
         // 2. Update Dynamic Tray Icon based on user selected mode
         let current_mode = config.read().tray_display_mode;
         let (val, is_temp) = match current_mode {
-            TrayDisplayMode::CpuUsage => (m.cpu_usage.map(|u| u.round() as u32).unwrap_or(0), false),
-            TrayDisplayMode::CpuTemperature => (m.cpu_temperature.map(|t| t.round() as u32).unwrap_or(0), true),
-            TrayDisplayMode::GpuUsage => (m.gpu_usage.map(|u| u.round() as u32).unwrap_or(0), false),
-            TrayDisplayMode::GpuTemperature => (m.gpu_temperature.map(|t| t.round() as u32).unwrap_or(0), true),
-            TrayDisplayMode::RamUsage => (m.ram_usage.round() as u32, false),
-            TrayDisplayMode::DefaultLogo => (0, false),
+            TrayDisplayMode::CpuUsage => (m.cpu_usage.map(|u| u.round() as u32), false),
+            TrayDisplayMode::CpuTemperature => (m.cpu_temperature.map(|t| t.round() as u32), true),
+            TrayDisplayMode::GpuUsage => (m.gpu_usage.map(|u| u.round() as u32), false),
+            TrayDisplayMode::GpuTemperature => (m.gpu_temperature.map(|t| t.round() as u32), true),
+            TrayDisplayMode::RamUsage => (Some(m.ram_usage.round() as u32), false),
+            TrayDisplayMode::DefaultLogo => (None, false),
         };
 
         let current_key = (current_mode, val);
@@ -414,7 +414,7 @@ impl TrayManager {
             let _ = cfg.save();
         }
 
-        self.last_icon_key = (mode, 9999);
+        self.last_icon_key = (mode, Some(9999));
     }
 
     fn set_hud_opacity(&mut self, pct: u8, config: &Arc<RwLock<AppConfig>>, hud: &FloatingHud) {
@@ -461,18 +461,29 @@ fn toggle_benchmark_session(
 
         item.set_text("▶ Start Benchmark Log");
 
+        let cpu_peak_temp_str = if session.peak_cpu_temp > 0.0 {
+            format!("{:.0}°C", session.peak_cpu_temp)
+        } else {
+            "N/A".to_string()
+        };
+        let gpu_peak_temp_str = if session.peak_gpu_temp > 0.0 {
+            format!("{:.0}°C", session.peak_gpu_temp)
+        } else {
+            "N/A".to_string()
+        };
+
         let summary = format!(
             "VeroStat Benchmark Summary\n\n\
             • Duration: {}m {}s ({} samples)\n\
-            • CPU Peak Temp: {:.0}°C\n\
+            • CPU Peak Temp: {}\n\
             • CPU Peak Load: {:.0}% (Avg: {:.1}%)\n\
-            • GPU Peak Temp: {:.0}°C\n\
+            • GPU Peak Temp: {}\n\
             • GPU Peak Load: {:.0}% (Avg: {:.1}%)\n\n\
             Session log saved to:\n\
             {}",
             mins, secs, session.sample_count,
-            session.peak_cpu_temp, session.peak_cpu_usage, avg_cpu,
-            session.peak_gpu_temp, session.peak_gpu_usage, avg_gpu,
+            cpu_peak_temp_str, session.peak_cpu_usage, avg_cpu,
+            gpu_peak_temp_str, session.peak_gpu_usage, avg_gpu,
             session.file_path.to_string_lossy()
         );
 
@@ -533,7 +544,7 @@ fn load_or_create_icon(mode: TrayDisplayMode) -> Result<Icon, String> {
     if mode == TrayDisplayMode::DefaultLogo {
         load_default_logo_icon()
     } else {
-        generate_stat_icon(0, mode == TrayDisplayMode::CpuTemperature || mode == TrayDisplayMode::GpuTemperature)
+        generate_stat_icon(None, mode == TrayDisplayMode::CpuTemperature || mode == TrayDisplayMode::GpuTemperature)
     }
 }
 
@@ -554,14 +565,16 @@ fn show_about_dialog() {
         A lightweight native Windows system-tray utility.\n\n\
         Features:\n\
         • Real-time CPU, GPU, RAM, & Network stats\n\
+        • CPU Core Inspector & Clock matrix (Ctrl+Shift+C)\n\
         • In-Game Floating HUD Overlay (Ctrl+Shift+O)\n\
+        • Anti-Cheat-Safe non-inject layered window\n\
+        • Hardware sensor hardening & graceful N/A fallbacks\n\
+        • System Uptime & Specs Clipboard Export\n\
         • Customizable HUD Elements & Opacity\n\
         • Dynamic Hardware Brand Theming (Intel/AMD/NVIDIA)\n\
-        • Global Hotkeys (Win+Shift+V / Ctrl+Shift+O)\n\
-        • Customizable taskbar icon\n\
-        • Top 3 Resource Hogs process viewer\n\
+        • Dynamic taskbar stat icon with '--' fallback\n\
         • Benchmark session CSV logging & peak reporting\n\
-        • Native Win32 dark dashboard\n\
+        • Native Win32 dark dashboard & zero subprocesses\n\
         • Ultra-low resource usage (< 45 MB RAM, 0% CPU)\n\n\
         Press Esc or Close button to minimize to tray.\0",
         env!("CARGO_PKG_VERSION")

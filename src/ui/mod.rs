@@ -458,6 +458,8 @@ unsafe fn render_dashboard(
 
     let gpu_right_str = if !gpu_vram_str.is_empty() && gpu_temp_str != "N/A" {
         format!("{} • {}", gpu_temp_str, gpu_vram_str)
+    } else if !gpu_vram_str.is_empty() {
+        gpu_vram_str
     } else {
         gpu_temp_str
     };
@@ -592,6 +594,9 @@ unsafe fn render_dashboard(
     SelectObject(hdc, ctx.font_small);
     SetTextColor(hdc, COLOR_TEXT_DIM);
     draw_text_line(hdc, pad_x, footer_y, "Esc to close", DT_LEFT);
+
+    let uptime_str = format!("Uptime: {}", crate::app::format_uptime(metrics.uptime_secs));
+    draw_text_line(hdc, pad_x + content_w, footer_y, &uptime_str, DT_RIGHT);
 }
 
 unsafe fn draw_stat_row(

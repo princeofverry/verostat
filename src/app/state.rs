@@ -58,6 +58,9 @@ pub struct SystemMetrics {
     // Top 3 Resource Hogs
     pub top_processes: Vec<ProcessInfo>,
 
+    // System Uptime in seconds
+    pub uptime_secs: u64,
+
     #[allow(dead_code)]
     pub updated_at: Instant,
 }
@@ -90,7 +93,7 @@ impl Default for SystemMetrics {
             disk_usage: 0.0,
 
             top_processes: Vec::new(),
-
+            uptime_secs: 0,
             updated_at: Instant::now(),
         }
     }

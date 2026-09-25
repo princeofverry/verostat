@@ -78,10 +78,20 @@ impl PdhThermalReader {
                     // Test collect
                     if pdh_collect(query) == 0 {
                         let mut val = PdhFmtCountervalue::default();
-                        if pdh_get_val(counter, PDH_FMT_DOUBLE, std::ptr::null_mut(), &mut val) == 0 && val.double_value > 200.0 {
-                            active_counter = counter;
-                            is_high_precision = high_prec;
-                            break;
+                        if pdh_get_val(counter, PDH_FMT_DOUBLE, std::ptr::null_mut(), &mut val) == 0 {
+                            let kelvin = if high_prec {
+                                val.double_value / 10.0
+                            } else {
+                                val.double_value
+                            };
+                            let celsius = kelvin - 273.15;
+                            // Plausible CPU operating range: 10°C to 125°C.
+                            // Values <= 5°C indicate an uninitialized ACPI thermal zone stub (e.g. 0°C / 273.15K).
+                            if celsius >= 10.0 && celsius <= 125.0 {
+                                active_counter = counter;
+                                is_high_precision = high_prec;
+                                break;
+                            }
                         }
                     }
                 }
@@ -122,7 +132,8 @@ impl PdhThermalReader {
             };
 
             let celsius = (kelvin - 273.15) as f32;
-            if (0.0..150.0).contains(&celsius) {
+            // Reject values < 10°C or > 125°C (uninitialized ACPI zone or invalid sensor)
+            if (10.0..125.0).contains(&celsius) {
                 Some(celsius)
             } else {
                 None
@@ -173,7 +184,8 @@ impl SensorMonitor {
             let label = component.label().to_lowercase();
             if label.contains("cpu") || label.contains("core") || label.contains("package") || label.contains("thermal") {
                 if let Some(temp) = component.temperature() {
-                    if temp > 0.0 && temp < 150.0 {
+                    // Reject values < 10°C or > 125°C (dummy 0°C or invalid)
+                    if temp >= 10.0 && temp <= 125.0 {
                         return Some(temp);
                     }
                 }

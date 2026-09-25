@@ -239,14 +239,20 @@ pub fn build_hud_text(m: &SystemMetrics, cfg: &AppConfig) -> String {
 
     if cfg.hud_show_cpu {
         let cpu_u = m.cpu_usage.unwrap_or(0.0);
-        let cpu_t = m.cpu_temperature.map(|t| format!("{:.0}°C", t)).unwrap_or_else(|| "N/A".to_string());
-        segments.push(format!("CPU {:.0}% {}", cpu_u, cpu_t));
+        if let Some(t) = m.cpu_temperature {
+            segments.push(format!("CPU {:.0}% {:.0}°C", cpu_u, t));
+        } else {
+            segments.push(format!("CPU {:.0}%", cpu_u));
+        }
     }
 
     if cfg.hud_show_gpu {
         let gpu_u = m.gpu_usage.map(|u| format!("{:.0}%", u)).unwrap_or_else(|| "N/A".to_string());
-        let gpu_t = m.gpu_temperature.map(|t| format!("{:.0}°C", t)).unwrap_or_else(|| "N/A".to_string());
-        segments.push(format!("GPU {} {}", gpu_u, gpu_t));
+        if let Some(t) = m.gpu_temperature {
+            segments.push(format!("GPU {} {:.0}°C", gpu_u, t));
+        } else {
+            segments.push(format!("GPU {}", gpu_u));
+        }
     }
 
     if cfg.hud_show_ram {
@@ -423,5 +429,23 @@ mod tests {
 
         let text = build_hud_text(&m, &cfg);
         assert_eq!(text, "VeroStat HUD (Select elements in tray)");
+    }
+
+    #[test]
+    fn test_build_hud_text_without_temperatures() {
+        let mut m = SystemMetrics::default();
+        m.cpu_usage = Some(25.0);
+        m.cpu_temperature = None; // Missing sensor
+        m.gpu_usage = Some(40.0);
+        m.gpu_temperature = None; // Missing sensor
+
+        let mut cfg = AppConfig::default();
+        cfg.hud_show_cpu = true;
+        cfg.hud_show_gpu = true;
+        cfg.hud_show_ram = false;
+        cfg.hud_show_network = false;
+
+        let text = build_hud_text(&m, &cfg);
+        assert_eq!(text, "CPU 25%   |   GPU 40%");
     }
 }
